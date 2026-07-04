@@ -561,6 +561,28 @@ button:disabled {
   font-size: 0.85rem;
 }
 
+.push-history-title-link,
+.push-history-detail-link {
+  color: var(--accent);
+  text-decoration: none;
+}
+
+.push-history-title-link:hover,
+.push-history-detail-link:hover {
+  color: var(--accent-hover);
+  text-decoration: underline;
+}
+
+.push-history-actions {
+  display: flex;
+  gap: 0.5rem;
+  margin-top: 0.5rem;
+}
+
+.push-history-actions .ghost-btn {
+  text-decoration: none;
+}
+
 .push-history-status {
   font-size: 0.75rem;
   padding: 0.15rem 0.45rem;

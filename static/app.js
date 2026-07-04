@@ -538,8 +538,25 @@ async function openListDetail(code) {
 }
 
 function showListResultsAgain() {
-  if (!lastListResults.length) return;
+  if (!lastListResults.length) {
+    resultsEl.innerHTML = "";
+    setStatus("");
+    return;
+  }
   renderListResultsView();
+}
+
+function handleDetailDeepLink() {
+  const params = new URLSearchParams(window.location.search);
+  const code = (params.get("code") || "").trim();
+  if (!code || params.get("view") !== "detail") return false;
+
+  if (codesInput && !codesInput.value.trim()) {
+    codesInput.value = code;
+  }
+  history.replaceState(null, "", "/");
+  openListDetail(code);
+  return true;
 }
 
 async function copyMagnetLink(link, button = null) {
@@ -1779,7 +1796,12 @@ fuzzyQueryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") search();
 });
 
-if (!restoreSearchState()) {
+const bootParams = new URLSearchParams(window.location.search);
+const bootDetailCode = (bootParams.get("code") || "").trim();
+if (bootDetailCode && bootParams.get("view") === "detail") {
+  setSearchMode("exact");
+  handleDetailDeepLink();
+} else if (!restoreSearchState()) {
   setSearchMode("exact");
 }
 

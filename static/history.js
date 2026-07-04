@@ -14,6 +14,11 @@ function formatHistoryTime(value) {
   return value.replace("T", " ").slice(0, 19);
 }
 
+function buildDetailUrl(code) {
+  const params = new URLSearchParams({ code, view: "detail" });
+  return `/?${params.toString()}`;
+}
+
 function renderPushHistory(items) {
   if (!items.length) {
     pushHistoryList.innerHTML = '<p class="push-history-empty">暂无推送记录</p>';
@@ -30,6 +35,12 @@ function renderPushHistory(items) {
           ? escapeHtml(item.folder_path)
           : "-";
       const title = item.magnet_title || item.code || "磁力推送";
+      const codeHtml = item.code
+        ? `<a class="push-history-code push-history-detail-link" href="${buildDetailUrl(item.code)}">${escapeHtml(item.code)}</a>`
+        : "";
+      const detailLinkHtml = item.code
+        ? `<a class="ghost-btn push-history-detail-link" href="${buildDetailUrl(item.code)}">查看详情</a>`
+        : "";
       const detail = item.success
         ? `<div class="push-history-message">${escapeHtml(item.message || "推送成功")}</div>`
         : `
@@ -40,8 +51,8 @@ function renderPushHistory(items) {
         <article class="push-history-item ${statusClass}">
           <div class="push-history-item-head">
             <div>
-              <strong>${escapeHtml(title)}</strong>
-              ${item.code ? `<span class="push-history-code">${escapeHtml(item.code)}</span>` : ""}
+              ${item.code ? `<a class="push-history-title-link" href="${buildDetailUrl(item.code)}">${escapeHtml(title)}</a>` : `<strong>${escapeHtml(title)}</strong>`}
+              ${codeHtml}
             </div>
             <span class="push-history-status ${statusClass}">${statusText}</span>
           </div>
@@ -49,6 +60,9 @@ function renderPushHistory(items) {
             <span>${formatHistoryTime(item.created_at)}</span>
             <span>${escapeHtml(item.backend || "-")}</span>
             <span>${folderText}</span>
+          </div>
+          <div class="push-history-actions">
+            ${detailLinkHtml}
           </div>
           ${detail}
         </article>`;
