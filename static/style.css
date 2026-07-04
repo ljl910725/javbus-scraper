@@ -1473,6 +1473,20 @@ button:disabled {
   border-color: rgba(74, 222, 128, 0.35);
 }
 
+.folder-tag.video {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.folder-item.file-item {
+  border-style: dashed;
+}
+
+.file-size {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
 .folder-empty {
   color: var(--muted);
   text-align: center;

@@ -963,6 +963,18 @@ async function handleSubtitleSaveFolderClick(event) {
     return true;
   }
 
+  const subtitleSaveFileBtn = event.target.closest(".subtitle-save-file-btn");
+  if (subtitleSaveFileBtn) {
+    event.stopPropagation();
+    const parentDir = subtitleSaveFileBtn.dataset.parentDir || "";
+    const fileName = subtitleSaveFileBtn.dataset.name || "";
+    const srtName = subtitleFilenameFromVideo(fileName);
+    if (parentDir) subtitleSaveTargetDir.value = parentDir;
+    subtitleSaveFilename.value = srtName;
+    setSubtitleSaveModalStatus(`已匹配视频 ${fileName} → ${srtName}`);
+    return true;
+  }
+
   return false;
 }
 
@@ -970,6 +982,23 @@ function defaultSubtitleFilename(code, languageCode) {
   const safeCode = (code || "subtitle").trim().toUpperCase();
   const lang = (languageCode || "sub").trim().toLowerCase();
   return `${safeCode}.${lang}.srt`;
+}
+
+function subtitleFilenameFromVideo(filename) {
+  const name = (filename || "").trim();
+  if (!name) return "subtitle.srt";
+  const dot = name.lastIndexOf(".");
+  const stem = dot > 0 ? name.slice(0, dot) : name;
+  return `${stem}.srt`;
+}
+
+function formatFileSize(size) {
+  const value = Number(size);
+  if (!Number.isFinite(value) || value <= 0) return "";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
+  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function setSubtitleSaveModalStatus(message, isError = false) {
@@ -983,17 +1012,19 @@ function renderSubtitleSaveFolders(data) {
   subtitleSaveCurrentPath.textContent = subtitleSaveBrowsePath || "挂载根目录";
   subtitleSaveUpBtn.disabled = subtitleSaveBrowseParent === null;
 
-  if (!data.folders?.length) {
-    subtitleSaveFolderList.innerHTML = '<p class="folder-empty">当前没有子文件夹</p>';
+  const folders = data.folders || [];
+  const files = data.files || [];
+  if (!folders.length && !files.length) {
+    subtitleSaveFolderList.innerHTML = '<p class="folder-empty">当前目录为空</p>';
     return;
   }
 
-  subtitleSaveFolderList.innerHTML = data.folders
+  const folderHtml = folders
     .map(
       (folder) => `
       <div class="folder-item">
         <div class="folder-item-main">
-          <strong>${escapeHtml(folder.name)}</strong>
+          <strong>📁 ${escapeHtml(folder.name)}</strong>
         </div>
         <div class="folder-item-path">${escapeHtml(folder.path)}</div>
         <div class="folder-item-actions">
@@ -1003,6 +1034,33 @@ function renderSubtitleSaveFolders(data) {
       </div>`
     )
     .join("");
+
+  const fileHtml = files
+    .map((file) => {
+      const sizeText = formatFileSize(file.size);
+      const tag = file.is_video ? '<span class="folder-tag video">视频</span>' : '<span class="folder-tag">文件</span>';
+      const srtName = subtitleFilenameFromVideo(file.name);
+      return `
+      <div class="folder-item file-item">
+        <div class="folder-item-main">
+          <strong>${escapeHtml(file.name)}</strong>
+          ${tag}
+          ${sizeText ? `<span class="file-size">${sizeText}</span>` : ""}
+        </div>
+        <div class="folder-item-path">${escapeHtml(file.parent_dir || subtitleSaveBrowsePath)}</div>
+        <div class="folder-item-actions">
+          <button
+            class="ghost-btn subtitle-save-file-btn"
+            type="button"
+            data-name="${escapeAttr(file.name)}"
+            data-parent-dir="${escapeAttr(file.parent_dir || subtitleSaveBrowsePath)}"
+          >匹配为 ${escapeHtml(srtName)}</button>
+        </div>
+      </div>`;
+    })
+    .join("");
+
+  subtitleSaveFolderList.innerHTML = `${folderHtml}${fileHtml}`;
 }
 
 async function loadSubtitleSaveFolders(path = "") {

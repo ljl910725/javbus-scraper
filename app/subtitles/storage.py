@@ -6,6 +6,9 @@ from pathlib import Path
 from app.config import settings
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+_VIDEO_EXTENSIONS = {
+    ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".mpg", ".mpeg",
+}
 
 
 def _resolve_root(raw: str) -> Path | None:
@@ -99,18 +102,33 @@ def list_directory(path: str | None = None) -> dict:
                 {"name": root.name or str(root), "path": str(root)}
                 for root in roots
             ],
+            "files": [],
             "selectable": False,
         }
 
     current = resolve_directory(value)
     folders: list[dict[str, str]] = []
+    files: list[dict[str, str]] = []
     try:
         for entry in sorted(current.iterdir(), key=lambda item: item.name.lower()):
-            if not entry.is_dir():
-                continue
             if entry.name.startswith("."):
                 continue
-            folders.append({"name": entry.name, "path": str(entry.resolve())})
+            resolved = str(entry.resolve())
+            if entry.is_dir():
+                folders.append({"name": entry.name, "path": resolved})
+                continue
+            if not entry.is_file():
+                continue
+            suffix = entry.suffix.lower()
+            files.append(
+                {
+                    "name": entry.name,
+                    "path": resolved,
+                    "parent_dir": str(entry.parent.resolve()),
+                    "is_video": suffix in _VIDEO_EXTENSIONS,
+                    "size": str(entry.stat().st_size),
+                }
+            )
     except PermissionError as exc:
         raise ValueError("没有权限读取该目录") from exc
 
@@ -129,6 +147,7 @@ def list_directory(path: str | None = None) -> dict:
         "current_path": str(current),
         "parent_path": parent_path,
         "folders": folders,
+        "files": files,
         "selectable": True,
     }
 

@@ -253,6 +253,7 @@ class SubtitleBrowseResponse(BaseModel):
     current_path: str = ""
     parent_path: str | None = None
     folders: list[dict[str, str]] = Field(default_factory=list)
+    files: list[dict[str, str]] = Field(default_factory=list)
     selectable: bool = False
 
 
