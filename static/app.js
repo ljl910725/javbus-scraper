@@ -39,6 +39,9 @@ const subtitleSaveModal = document.getElementById("subtitleSaveModal");
 const subtitleSaveFilename = document.getElementById("subtitleSaveFilename");
 const subtitleSaveTargetDir = document.getElementById("subtitleSaveTargetDir");
 const subtitleSaveFolderList = document.getElementById("subtitleSaveFolderList");
+const subtitleSaveSearchInput = document.getElementById("subtitleSaveSearchInput");
+const subtitleSaveSearchBtn = document.getElementById("subtitleSaveSearchBtn");
+const subtitleSaveSearchResults = document.getElementById("subtitleSaveSearchResults");
 const subtitleSaveCurrentPath = document.getElementById("subtitleSaveCurrentPath");
 const subtitleSaveUpBtn = document.getElementById("subtitleSaveUpBtn");
 const subtitleSaveUseDirBtn = document.getElementById("subtitleSaveUseDirBtn");
@@ -67,6 +70,7 @@ let listBulkMode = false;
 let subtitleSaveDir = "";
 let subtitleSaveBrowsePath = "";
 let subtitleSaveBrowseParent = null;
+let subtitleSaveHighlightFile = "";
 let pendingSubtitleSave = null;
 let selectedCodes = new Set();
 let lastErrors = [];
@@ -975,6 +979,16 @@ async function handleSubtitleSaveFolderClick(event) {
     return true;
   }
 
+  const subtitleSaveLocateBtn = event.target.closest(".subtitle-save-locate-btn");
+  if (subtitleSaveLocateBtn) {
+    event.stopPropagation();
+    await locateSubtitleFile(
+      subtitleSaveLocateBtn.dataset.parentDir || "",
+      subtitleSaveLocateBtn.dataset.name || ""
+    );
+    return true;
+  }
+
   return false;
 }
 
@@ -1061,9 +1075,109 @@ function renderSubtitleSaveFolders(data) {
     .join("");
 
   subtitleSaveFolderList.innerHTML = `${folderHtml}${fileHtml}`;
+  if (subtitleSaveHighlightFile) {
+    highlightSubtitleSaveFile(subtitleSaveHighlightFile);
+  }
+}
+
+function hideSubtitleSaveSearchResults() {
+  subtitleSaveSearchResults.classList.add("hidden");
+  subtitleSaveSearchResults.innerHTML = "";
+}
+
+function highlightSubtitleSaveFile(fileName) {
+  if (!fileName) return;
+  let matched = false;
+  subtitleSaveFolderList.querySelectorAll(".file-item").forEach((item) => {
+    item.classList.remove("highlighted");
+    const nameEl = item.querySelector("strong");
+    if (nameEl?.textContent === fileName) {
+      item.classList.add("highlighted");
+      item.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      matched = true;
+    }
+  });
+  if (matched) {
+    setSubtitleSaveModalStatus(`已定位到文件: ${fileName}`);
+  }
+}
+
+function renderSubtitleSaveSearchResults(data) {
+  const results = data.results || [];
+  if (!results.length) {
+    subtitleSaveSearchResults.innerHTML = '<p class="folder-empty">未找到匹配文件</p>';
+    subtitleSaveSearchResults.classList.remove("hidden");
+    return;
+  }
+
+  const truncatedHint = data.truncated
+    ? `<p class="field-hint">结果较多，仅显示前 ${results.length} 条（已扫描约 ${data.scanned || 0} 项）</p>`
+    : "";
+
+  subtitleSaveSearchResults.innerHTML = `${truncatedHint}${results
+    .map((file) => {
+      const sizeText = formatFileSize(file.size);
+      const tag = file.is_video ? '<span class="folder-tag video">视频</span>' : '<span class="folder-tag">文件</span>';
+      const srtName = subtitleFilenameFromVideo(file.name);
+      return `
+      <div class="folder-item file-item search-result-item">
+        <div class="folder-item-main">
+          <strong>${escapeHtml(file.name)}</strong>
+          ${tag}
+          ${sizeText ? `<span class="file-size">${sizeText}</span>` : ""}
+        </div>
+        <div class="folder-item-path">${escapeHtml(file.parent_dir || "")}</div>
+        <div class="folder-item-actions">
+          <button
+            class="ghost-btn subtitle-save-locate-btn"
+            type="button"
+            data-name="${escapeAttr(file.name)}"
+            data-parent-dir="${escapeAttr(file.parent_dir || "")}"
+          >定位目录</button>
+          <button
+            class="ghost-btn subtitle-save-file-btn"
+            type="button"
+            data-name="${escapeAttr(file.name)}"
+            data-parent-dir="${escapeAttr(file.parent_dir || "")}"
+          >匹配为 ${escapeHtml(srtName)}</button>
+        </div>
+      </div>`;
+    })
+    .join("")}`;
+  subtitleSaveSearchResults.classList.remove("hidden");
+}
+
+async function searchSubtitleFiles() {
+  const query = subtitleSaveSearchInput.value.trim();
+  if (query.length < 2) {
+    setSubtitleSaveModalStatus("请输入至少 2 个字符", true);
+    return;
+  }
+  setSubtitleSaveModalStatus("正在搜索文件...");
+  const res = await authFetch(`/api/subtitles/search-files?q=${encodeURIComponent(query)}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setSubtitleSaveModalStatus(data.detail || "搜索失败", true);
+    return;
+  }
+  renderSubtitleSaveSearchResults(data);
+  setSubtitleSaveModalStatus(`找到 ${data.results?.length || 0} 个匹配文件`);
+}
+
+async function locateSubtitleFile(parentDir, fileName) {
+  if (!parentDir) {
+    setSubtitleSaveModalStatus("无法定位：缺少目录信息", true);
+    return;
+  }
+  hideSubtitleSaveSearchResults();
+  subtitleSaveSearchInput.value = "";
+  subtitleSaveHighlightFile = fileName;
+  subtitleSaveTargetDir.value = parentDir;
+  await loadSubtitleSaveFolders(parentDir);
 }
 
 async function loadSubtitleSaveFolders(path = "") {
+  hideSubtitleSaveSearchResults();
   setSubtitleSaveModalStatus("正在加载目录...");
   const query = path ? `?path=${encodeURIComponent(path)}` : "";
   const res = await authFetch(`/api/subtitles/browse${query}`);
@@ -1093,6 +1207,9 @@ function openSubtitleSaveModal(button) {
     pendingSubtitleSave.language_code
   );
   subtitleSaveTargetDir.value = subtitleSaveDir || "";
+  subtitleSaveSearchInput.value = "";
+  subtitleSaveHighlightFile = "";
+  hideSubtitleSaveSearchResults();
   subtitleSaveModal.classList.remove("hidden");
   subtitleSaveConfirmBtn.textContent = "保存到目录";
   loadSubtitleSaveFolders(subtitleSaveDir || subtitleSaveBrowsePath || "");
@@ -1101,6 +1218,8 @@ function openSubtitleSaveModal(button) {
 function closeSubtitleSaveModal() {
   subtitleSaveModal.classList.add("hidden");
   pendingSubtitleSave = null;
+  subtitleSaveHighlightFile = "";
+  hideSubtitleSaveSearchResults();
   setSubtitleSaveModalStatus("");
 }
 
@@ -1891,6 +2010,13 @@ subtitleSaveUseDirBtn.addEventListener("click", () => {
   }
   subtitleSaveTargetDir.value = subtitleSaveBrowsePath;
   setSubtitleSaveModalStatus(`已选择目录: ${subtitleSaveBrowsePath}`);
+});
+subtitleSaveSearchBtn.addEventListener("click", searchSubtitleFiles);
+subtitleSaveSearchInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter") {
+    event.preventDefault();
+    searchSubtitleFiles();
+  }
 });
 subtitleSaveConfirmBtn.addEventListener("click", confirmSubtitleSave);
 pushFolderModal.addEventListener("click", (event) => {

@@ -260,6 +260,7 @@ class SubtitleBrowseFile(BaseModel):
     parent_dir: str = ""
     is_video: bool = False
     size: str = ""
+    mtime: str = ""
 
 
 class SubtitleBrowseResponse(BaseModel):
@@ -268,6 +269,13 @@ class SubtitleBrowseResponse(BaseModel):
     folders: list[SubtitleBrowseFolder] = Field(default_factory=list)
     files: list[SubtitleBrowseFile] = Field(default_factory=list)
     selectable: bool = False
+
+
+class SubtitleFileSearchResponse(BaseModel):
+    query: str
+    results: list[SubtitleBrowseFile] = Field(default_factory=list)
+    truncated: bool = False
+    scanned: int = 0
 
 
 class SubtitleSaveRequest(BaseModel):

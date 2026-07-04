@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import re
 from pathlib import Path
 
@@ -9,6 +10,34 @@ _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 _VIDEO_EXTENSIONS = {
     ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".mpg", ".mpeg",
 }
+_MAX_SEARCH_RESULTS = 50
+_MAX_SCAN_ENTRIES = 8000
+
+
+def _safe_mtime(path: Path) -> float:
+    try:
+        return path.stat().st_mtime
+    except OSError:
+        return 0.0
+
+
+def _file_info(entry: Path) -> dict[str, str | bool]:
+    suffix = entry.suffix.lower()
+    try:
+        stat = entry.stat()
+        size = str(stat.st_size)
+        mtime = str(int(stat.st_mtime))
+    except OSError:
+        size = "0"
+        mtime = "0"
+    return {
+        "name": entry.name,
+        "path": str(entry.resolve()),
+        "parent_dir": str(entry.parent.resolve()),
+        "is_video": suffix in _VIDEO_EXTENSIONS,
+        "size": size,
+        "mtime": mtime,
+    }
 
 
 def _resolve_root(raw: str) -> Path | None:
@@ -95,42 +124,36 @@ def list_directory(path: str | None = None) -> dict:
 
     value = (path or "").strip()
     if not value:
+        root_folders = [
+            {"name": root.name or str(root), "path": str(root)}
+            for root in sorted(roots, key=_safe_mtime, reverse=True)
+        ]
         return {
             "current_path": "",
             "parent_path": None,
-            "folders": [
-                {"name": root.name or str(root), "path": str(root)}
-                for root in roots
-            ],
+            "folders": root_folders,
             "files": [],
             "selectable": False,
         }
 
     current = resolve_directory(value)
-    folders: list[dict[str, str]] = []
-    files: list[dict[str, str]] = []
+    folder_entries: list[Path] = []
+    file_entries: list[Path] = []
     try:
-        for entry in sorted(current.iterdir(), key=lambda item: item.name.lower()):
+        for entry in current.iterdir():
             if entry.name.startswith("."):
                 continue
-            resolved = str(entry.resolve())
             if entry.is_dir():
-                folders.append({"name": entry.name, "path": resolved})
-                continue
-            if not entry.is_file():
-                continue
-            suffix = entry.suffix.lower()
-            files.append(
-                {
-                    "name": entry.name,
-                    "path": resolved,
-                    "parent_dir": str(entry.parent.resolve()),
-                    "is_video": suffix in _VIDEO_EXTENSIONS,
-                    "size": str(entry.stat().st_size),
-                }
-            )
+                folder_entries.append(entry)
+            elif entry.is_file():
+                file_entries.append(entry)
     except PermissionError as exc:
         raise ValueError("没有权限读取该目录") from exc
+
+    folder_entries.sort(key=_safe_mtime, reverse=True)
+    file_entries.sort(key=_safe_mtime, reverse=True)
+    folders = [{"name": entry.name, "path": str(entry.resolve())} for entry in folder_entries]
+    files = [_file_info(entry) for entry in file_entries]
 
     parent_path: str | None = None
     parent = current.parent
@@ -174,4 +197,52 @@ def save_subtitle_to_disk(*, target_dir: str, filename: str, content: bytes) -> 
         "path": str(target),
         "filename": safe_name,
         "size": len(content),
+    }
+
+
+def search_files(query: str, *, limit: int = _MAX_SEARCH_RESULTS) -> dict:
+    keyword = (query or "").strip().lower()
+    if len(keyword) < 2:
+        raise ValueError("搜索关键词至少 2 个字符")
+
+    roots = get_browse_roots()
+    if not roots:
+        raise ValueError("未配置可浏览的字幕保存目录")
+
+    max_results = max(1, min(limit, _MAX_SEARCH_RESULTS))
+    results: list[dict[str, str | bool]] = []
+    scanned = 0
+    truncated = False
+
+    for root in roots:
+        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+            dirnames[:] = [name for name in dirnames if not name.startswith(".")]
+            for name in filenames:
+                if name.startswith("."):
+                    continue
+                scanned += 1
+                if scanned > _MAX_SCAN_ENTRIES:
+                    truncated = True
+                    break
+                if keyword not in name.lower():
+                    continue
+                entry = Path(dirpath) / name
+                if not entry.is_file():
+                    continue
+                results.append(_file_info(entry))
+            if truncated or len(results) >= max_results:
+                break
+        if truncated or len(results) >= max_results:
+            break
+
+    results.sort(key=lambda item: int(str(item.get("mtime", "0"))), reverse=True)
+    if len(results) > max_results:
+        results = results[:max_results]
+        truncated = True
+
+    return {
+        "query": query.strip(),
+        "results": results,
+        "truncated": truncated,
+        "scanned": scanned,
     }

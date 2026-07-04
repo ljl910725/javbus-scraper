@@ -1,3 +1,5 @@
+import asyncio
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
@@ -5,6 +7,7 @@ from app import db
 from app.deps import CurrentUser, OptionalUser
 from app.models import (
     SubtitleBrowseResponse,
+    SubtitleFileSearchResponse,
     SubtitleItem,
     SubtitleSaveRequest,
     SubtitleSaveResponse,
@@ -16,7 +19,7 @@ from app.subtitles.service import (
     search_subtitles,
     user_settings_from_id,
 )
-from app.subtitles.storage import list_directory
+from app.subtitles.storage import list_directory, search_files
 from app.user_settings import apply_settings_update
 
 router = APIRouter(prefix="/api/subtitles")
@@ -50,6 +53,21 @@ async def subtitle_browse(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"目录浏览失败: {exc}") from exc
+
+
+@router.get("/search-files", response_model=SubtitleFileSearchResponse)
+async def subtitle_search_files(
+    user: CurrentUser,
+    q: str = Query(..., min_length=2, description="文件名关键词"),
+    limit: int = Query(50, ge=1, le=100, description="最多返回条数"),
+) -> SubtitleFileSearchResponse:
+    try:
+        data = await asyncio.to_thread(search_files, q, limit=limit)
+        return SubtitleFileSearchResponse(**data)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"文件搜索失败: {exc}") from exc
 
 
 @router.get("/download")

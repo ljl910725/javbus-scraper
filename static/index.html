@@ -140,7 +140,12 @@
         <span id="subtitleSaveCurrentPath" class="folder-current-path">/</span>
         <button id="subtitleSaveUseDirBtn" class="ghost-btn" type="button">使用当前目录</button>
       </div>
-      <p class="field-hint">可浏览文件夹与视频文件；点击视频可自动匹配同名字幕（.srt）并选定保存目录</p>
+      <div class="subtitle-save-search">
+        <input id="subtitleSaveSearchInput" type="text" placeholder="递归搜索文件名，如 SSIS-001 或 .mp4" />
+        <button id="subtitleSaveSearchBtn" class="ghost-btn" type="button">搜索</button>
+      </div>
+      <div id="subtitleSaveSearchResults" class="folder-list subtitle-save-search-results hidden"></div>
+      <p class="field-hint">文件夹按修改时间新→旧排序；可递归搜索并定位到文件所在目录</p>
       <div id="subtitleSaveFolderList" class="folder-list"></div>
       <div class="subtitle-save-actions">
         <button id="subtitleSaveConfirmBtn" type="button">保存到目录</button>
