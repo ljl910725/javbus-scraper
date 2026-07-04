@@ -11,11 +11,13 @@ from app.scraper.magnets import fetch_magnets
 from app.scraper.parser import (
     ParsedMovie,
     build_detail_url,
+    build_fuzzy_search_url,
     build_search_url,
     find_search_results,
     is_valid_detail,
     normalize_code,
     parse_detail_page,
+    parse_fuzzy_search_page,
     search_result_url,
 )
 
@@ -170,3 +172,34 @@ async def scrape_movies_batch(
             await asyncio.sleep(settings.request_delay)
 
     return results, errors
+
+
+async def fuzzy_search_movies(
+    query: str,
+    *,
+    user_settings: dict | None = None,
+) -> list[dict]:
+    keywords = " ".join(query.split())
+    if not keywords:
+        raise ScrapeError("请输入搜索关键词")
+
+    client = get_client(user_settings)
+    search_url = build_fuzzy_search_url(keywords)
+    html = await client.get_text(search_url)
+    previews = parse_fuzzy_search_page(html, source_url=search_url)
+    if not previews:
+        raise ScrapeError(f"未找到与「{keywords}」相关的影片")
+
+    return [
+        {
+            "code": item.code,
+            "title": item.title,
+            "cover_url": item.cover_url,
+            "source_url": item.source_url,
+            "release_date": item.release_date,
+            "has_hd": item.has_hd,
+            "has_ultra": item.has_ultra,
+            "has_subtitle": item.has_subtitle,
+        }
+        for item in previews
+    ]

@@ -45,6 +45,11 @@ async def index() -> FileResponse:
     return FileResponse(static_dir / "index.html")
 
 
+@app.get("/history")
+async def history_page() -> FileResponse:
+    return FileResponse(static_dir / "history.html")
+
+
 @app.get("/settings")
 async def settings_page() -> FileResponse:
     return FileResponse(static_dir / "settings.html")

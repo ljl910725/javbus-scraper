@@ -117,6 +117,7 @@ function buildSettingsPayload() {
     translate_target_lang: document.getElementById("translateTargetLang").value,
     ai_translate_base_url: document.getElementById("aiBaseUrl").value,
     ai_translate_model: document.getElementById("aiModel").value,
+    results_page_size: Number(document.getElementById("resultsPageSize").value) || 10,
   };
 
   const password = document.getElementById("cd2Password").value;
@@ -153,6 +154,8 @@ function fillForm(settings) {
   document.getElementById("aiBaseUrl").value = settings.ai_translate_base_url || "";
   document.getElementById("aiApiKey").value = settings.ai_translate_api_key === "***" ? "" : settings.ai_translate_api_key || "";
   document.getElementById("aiModel").value = settings.ai_translate_model || "gpt-4o-mini";
+  const pageSize = Number(settings.results_page_size) || 10;
+  document.getElementById("resultsPageSize").value = String(pageSize);
   toggleCd2AuthFields();
 }
 
@@ -367,3 +370,4 @@ settingsForm.addEventListener("submit", async (event) => {
 });
 
 loadSettings();
+initNav({ onLogout: () => loadSettings() });

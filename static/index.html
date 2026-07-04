@@ -11,23 +11,45 @@
     <header class="top-header">
       <div>
         <h1>JavBus 番号爬虫</h1>
-        <p class="subtitle">输入番号，抓取标题、演员、封面与磁力链接</p>
+        <p class="subtitle">精确查询番号，或模糊搜索影片</p>
       </div>
       <div class="header-actions">
-        <span id="userBadge" class="user-badge hidden"></span>
+        <div id="userMenu" class="user-menu hidden">
+          <button type="button" class="user-menu-trigger" id="userMenuTrigger" aria-haspopup="true">
+            <span id="userMenuName"></span>
+            <span class="user-menu-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="user-menu-dropdown" id="userMenuDropdown" role="menu">
+            <a href="/" role="menuitem">首页</a>
+            <a href="/settings" role="menuitem">配置</a>
+            <a href="/history" role="menuitem">推送历史</a>
+            <button type="button" id="userMenuLogoutBtn" role="menuitem">退出</button>
+          </div>
+        </div>
         <button id="loginBtn" class="ghost-btn" type="button">登录</button>
         <button id="registerBtn" class="ghost-btn" type="button">注册</button>
-        <button id="logoutBtn" class="ghost-btn hidden" type="button">退出</button>
-        <a href="/settings" class="ghost-btn link-btn">配置</a>
       </div>
     </header>
 
     <section class="search-panel">
-      <label for="codes">番号（每行一个，支持批量）</label>
-      <textarea id="codes" rows="5" placeholder="SSNI-730&#10;IPX-177"></textarea>
+      <div class="search-mode-tabs">
+        <button id="exactModeBtn" class="mode-tab active" type="button" data-mode="exact">精确查询</button>
+        <button id="fuzzyModeBtn" class="mode-tab" type="button" data-mode="fuzzy">模糊搜索</button>
+      </div>
+
+      <div id="exactSearchFields">
+        <label for="codes">番号（每行一个，支持批量）</label>
+        <textarea id="codes" rows="5" placeholder="SSNI-730&#10;IPX-177"></textarea>
+      </div>
+
+      <div id="fuzzySearchFields" class="hidden">
+        <label for="fuzzyQuery">关键词（空格分隔，仅支持单次搜索）</label>
+        <input id="fuzzyQuery" type="text" placeholder="例如：三上 悠亚 教师" />
+        <p class="field-hint">模糊搜索与精确查询共用列表视图；默认点击条目查看详情，开启多选后可批量复制/推送</p>
+      </div>
 
       <div class="options">
-        <label class="checkbox">
+        <label class="checkbox" id="downloadCoverOption">
           <input type="checkbox" id="downloadCover" />
           下载封面到本地
         </label>
@@ -38,13 +60,6 @@
     </section>
 
     <section id="configInfo" class="config-info hidden"></section>
-    <section id="pushHistorySection" class="push-history-section hidden">
-      <div class="push-history-header">
-        <h2>推送历史</h2>
-        <button id="refreshPushHistoryBtn" class="ghost-btn" type="button">刷新</button>
-      </div>
-      <div id="pushHistoryList" class="push-history-list"></div>
-    </section>
     <section id="errors" class="errors hidden"></section>
     <section id="results" class="results"></section>
   </div>
@@ -97,6 +112,7 @@
   </div>
 
   <script src="/static/auth.js"></script>
+  <script src="/static/nav.js"></script>
   <script src="/static/app.js"></script>
 </body>
 </html>

@@ -25,8 +25,8 @@ services:
       BASE_URL: https://www.javbus.com
       PUSH_BACKEND: cd2
     volumes:
-      - ./data:/app/data
-      - ./downloads:/app/downloads
+      - ./data:/vol1/1000/docker/javbus-scraper/data
+      - ./downloads:/vol1/1000/docker/javbus-scraper/downloads
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s

@@ -1,0 +1,51 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>推送历史 - JavBus 爬虫</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="top-header">
+      <div>
+        <h1>推送历史</h1>
+        <p class="subtitle">查看账号下的磁力推送记录与失败原因</p>
+      </div>
+      <div class="header-actions">
+        <div id="userMenu" class="user-menu hidden">
+          <button type="button" class="user-menu-trigger" id="userMenuTrigger" aria-haspopup="true">
+            <span id="userMenuName"></span>
+            <span class="user-menu-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="user-menu-dropdown" id="userMenuDropdown" role="menu">
+            <a href="/" role="menuitem">首页</a>
+            <a href="/settings" role="menuitem">配置</a>
+            <a href="/history" role="menuitem" class="active">推送历史</a>
+            <button type="button" id="userMenuLogoutBtn" role="menuitem">退出</button>
+          </div>
+        </div>
+        <button id="loginBtn" class="ghost-btn" type="button">登录</button>
+        <button id="registerBtn" class="ghost-btn" type="button">注册</button>
+      </div>
+    </header>
+
+    <section id="historyLoginHint" class="errors">
+      请先 <a href="/">返回首页登录</a> 后查看推送历史。
+    </section>
+
+    <section id="historySection" class="push-history-section hidden">
+      <div class="push-history-header">
+        <h2>最近推送</h2>
+        <button id="refreshPushHistoryBtn" class="ghost-btn" type="button">刷新</button>
+      </div>
+      <div id="pushHistoryList" class="push-history-list"></div>
+    </section>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script src="/static/nav.js"></script>
+  <script src="/static/history.js"></script>
+</body>
+</html>

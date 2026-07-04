@@ -49,6 +49,79 @@ header h1 {
   flex-wrap: wrap;
 }
 
+.user-menu {
+  position: relative;
+}
+
+.user-menu-trigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.45rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: var(--surface);
+  color: var(--accent);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.user-menu-trigger:hover,
+.user-menu:focus-within .user-menu-trigger {
+  border-color: var(--accent);
+  background: color-mix(in srgb, var(--surface) 85%, var(--accent) 15%);
+}
+
+.user-menu-caret {
+  font-size: 0.7rem;
+  color: var(--muted);
+}
+
+.user-menu-dropdown {
+  display: none;
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 9.5rem;
+  padding: 0.45rem 0.35rem 0.35rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.18);
+  z-index: 30;
+}
+
+.user-menu.is-open .user-menu-dropdown,
+.user-menu:hover .user-menu-dropdown,
+.user-menu:focus-within .user-menu-dropdown {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.user-menu-dropdown a,
+.user-menu-dropdown button {
+  display: block;
+  width: 100%;
+  padding: 0.5rem 0.7rem;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text);
+  text-align: left;
+  text-decoration: none;
+  font-size: 0.88rem;
+  cursor: pointer;
+}
+
+.user-menu-dropdown a:hover,
+.user-menu-dropdown button:hover,
+.user-menu-dropdown a.active {
+  background: var(--tag-bg);
+  color: var(--accent);
+}
+
 .ghost-btn {
   padding: 0.45rem 0.9rem;
   background: transparent;
@@ -88,6 +161,270 @@ header h1 {
   display: block;
   margin-bottom: 0.5rem;
   font-weight: 600;
+}
+
+.search-mode-tabs {
+  display: flex;
+  gap: 0.5rem;
+  margin-bottom: 1rem;
+}
+
+.mode-tab {
+  padding: 0.45rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--muted);
+  font-size: 0.9rem;
+  font-weight: 600;
+}
+
+.mode-tab.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.search-panel input[type="text"] {
+  width: 100%;
+  padding: 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 0.95rem;
+}
+
+.search-panel input[type="text"]:focus {
+  outline: 2px solid var(--accent);
+  border-color: transparent;
+}
+
+.fuzzy-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.fuzzy-toolbar-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem 1rem;
+}
+
+.fuzzy-control {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.fuzzy-control select {
+  min-width: 11rem;
+  padding: 0.35rem 0.5rem;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--surface);
+  color: var(--text);
+  font-size: 0.85rem;
+}
+
+.fuzzy-count {
+  margin-left: auto;
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.list-bulk-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+  padding: 0.55rem 0.65rem;
+  border: 1px dashed var(--border);
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--surface) 88%, var(--accent) 12%);
+}
+
+.list-bulk-select-all {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.list-selected-count {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.list-pagination {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+
+.list-page-info {
+  font-size: 0.85rem;
+  color: var(--muted);
+}
+
+.list-page-size select {
+  min-width: 4.5rem;
+}
+
+.list-select {
+  display: inline-flex;
+  align-items: center;
+  cursor: pointer;
+}
+
+.list-select input {
+  width: 0.95rem;
+  height: 0.95rem;
+  accent-color: var(--accent);
+}
+
+.list-item-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+
+.list-item-actions .ghost-btn {
+  font-size: 0.72rem;
+  padding: 0.2rem 0.45rem;
+}
+
+.fuzzy-results-empty-state {
+  display: block;
+  padding: 2rem 1rem;
+  text-align: center;
+}
+
+.fuzzy-empty {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.fuzzy-results {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+}
+
+.fuzzy-item {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  overflow: hidden;
+  background: var(--surface);
+  cursor: pointer;
+  transition: border-color 0.15s, transform 0.15s;
+}
+
+.fuzzy-item:hover {
+  border-color: var(--accent);
+  transform: translateY(-2px);
+}
+
+.fuzzy-results.bulk-mode .fuzzy-item {
+  cursor: pointer;
+}
+
+.fuzzy-item.list-item-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.list-bulk-mode-btn.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.fuzzy-cover {
+  aspect-ratio: 2 / 3;
+  background: var(--bg);
+  overflow: hidden;
+}
+
+.fuzzy-badges {
+  display: inline-flex;
+  flex-wrap: wrap;
+  gap: 0.2rem;
+  align-items: center;
+}
+
+.fuzzy-badges .badge {
+  font-size: 0.62rem;
+  padding: 0.1rem 0.3rem;
+}
+
+.fuzzy-cover img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: right center;
+  display: block;
+}
+
+.fuzzy-cover-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.fuzzy-info {
+  padding: 0.65rem 0.75rem;
+}
+
+.fuzzy-code-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.35rem;
+  margin-bottom: 0.3rem;
+}
+
+.fuzzy-code {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.fuzzy-date {
+  display: block;
+  font-size: 0.72rem;
+  color: var(--muted);
+  margin-top: 0.25rem;
+}
+
+.fuzzy-title {
+  font-size: 0.85rem;
+  line-height: 1.4;
+  color: var(--text);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.detail-back-bar {
+  margin-bottom: 1rem;
+}
+
+.detail-back-btn {
+  padding: 0.45rem 0.9rem;
+  font-size: 0.85rem;
 }
 
 textarea {
@@ -471,6 +808,11 @@ button:disabled {
 .badge-sub {
   background: rgba(108, 140, 255, 0.2);
   color: var(--accent);
+}
+
+.badge-uhd {
+  background: rgba(56, 189, 248, 0.22);
+  color: #38bdf8;
 }
 
 .copy-btn,

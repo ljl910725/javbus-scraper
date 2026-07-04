@@ -1,6 +1,6 @@
 import re
 from dataclasses import dataclass, field
-from urllib.parse import urljoin
+from urllib.parse import quote, urljoin
 
 from bs4 import BeautifulSoup, Tag
 
@@ -39,6 +39,117 @@ def build_detail_url(code: str, *, uncensored: bool = False) -> str:
 def build_search_url(code: str) -> str:
     base = settings.base_url.rstrip("/")
     return f"{base}/search/{code}&type=&parent=ce"
+
+
+def build_fuzzy_search_url(query: str) -> str:
+    base = settings.base_url.rstrip("/")
+    encoded = quote(query.strip(), safe="")
+    return f"{base}/search/{encoded}&type=&parent=ce"
+
+
+@dataclass
+class SearchPreview:
+    code: str
+    title: str = ""
+    cover_url: str = ""
+    source_url: str = ""
+    release_date: str = ""
+    has_hd: bool = False
+    has_ultra: bool = False
+    has_subtitle: bool = False
+
+
+def _parse_search_tags(box: Tag) -> dict[str, bool]:
+    flags = {"has_hd": False, "has_ultra": False, "has_subtitle": False}
+    for btn in box.select(".item-tag button"):
+        text = btn.get_text(strip=True)
+        title = btn.get("title", "") or ""
+        combined = f"{text} {title}"
+
+        if text == "超清" or "超清" in title:
+            flags["has_ultra"] = True
+            continue
+        if text == "高清" or ("高清" in combined and "超清" not in combined) or "HD" in title.upper():
+            flags["has_hd"] = True
+            continue
+        if text == "字幕" or "字幕" in combined:
+            flags["has_subtitle"] = True
+    return flags
+
+
+def _parse_release_date(box: Tag) -> str:
+    for date_el in box.select(".photo-info date"):
+        text = date_el.get_text(strip=True)
+        if re.fullmatch(r"\d{4}-\d{2}-\d{2}", text):
+            return text
+    return ""
+
+
+def extract_code_from_slug(slug: str) -> str:
+    slug = slug.strip("/").split("/")[-1]
+    match = re.match(r"^([A-Za-z0-9]+[-_][A-Za-z0-9]+)", slug)
+    if match:
+        return match.group(1).upper().replace("_", "-")
+    return slug.upper().replace("_", "-")
+
+
+def _title_from_img(img_title: str, code: str) -> str:
+    raw = img_title.strip()
+    if not raw:
+        return ""
+    upper = raw.upper()
+    code_upper = code.upper()
+    if upper.startswith(code_upper):
+        return raw[len(code) :].strip(" -:|")
+    return raw
+
+
+def parse_fuzzy_search_page(html: str, *, source_url: str) -> list[SearchPreview]:
+    soup = BeautifulSoup(html, "lxml")
+    results: list[SearchPreview] = []
+    seen: set[str] = set()
+
+    for box in soup.select("a.movie-box"):
+        href = (box.get("href") or "").strip()
+        if not href:
+            continue
+
+        code = extract_code_from_slug(href)
+        if not code or code in seen:
+            continue
+
+        img = box.select_one("img")
+        cover_url = ""
+        title = ""
+        if img:
+            if img.get("src"):
+                cover_url = urljoin(source_url, img["src"])
+            title = _title_from_img(img.get("title", ""), code)
+
+        if not title:
+            span = box.select_one(".photo-info span")
+            if span:
+                span_text = span.get_text(strip=True)
+                if span_text and span_text.upper() != code:
+                    title = span_text
+
+        detail_url = urljoin(source_url, href)
+        tags = _parse_search_tags(box)
+        seen.add(code)
+        results.append(
+            SearchPreview(
+                code=code,
+                title=title,
+                cover_url=cover_url,
+                source_url=detail_url,
+                release_date=_parse_release_date(box),
+                has_hd=tags["has_hd"],
+                has_ultra=tags["has_ultra"],
+                has_subtitle=tags["has_subtitle"],
+            )
+        )
+
+    return results
 
 
 def extract_gid_uc(html: str) -> tuple[str, str]:

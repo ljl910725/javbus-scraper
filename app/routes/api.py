@@ -11,6 +11,7 @@ from app.models import (
     CD2FoldersResponse,
     CD2StatusResponse,
     ConfigResponse,
+    FuzzySearchResponse,
     MovieInfo,
     P115StatusResponse,
     Push115ItemResult,
@@ -19,12 +20,13 @@ from app.models import (
     PushHistoryItem,
     PushHistoryResponse,
     PushStatusResponse,
+    SearchPreviewItem,
 )
 from app.user_settings import merge_settings, proxy_active
 from app import db
 from app.deps import CurrentUser, OptionalUser
 from app.scraper.client import get_client
-from app.scraper.service import ScrapeError, scrape_movie, scrape_movies_batch
+from app.scraper.service import ScrapeError, fuzzy_search_movies, scrape_movie, scrape_movies_batch
 from app.integrations import cd2, p115, push as push_service
 from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
 from app.integrations.p115 import P115Error, P115NotConfiguredError
@@ -80,6 +82,7 @@ async def get_config(user: OptionalUser = None) -> ConfigResponse:
         p115_configured=bool(cfg.get("p115_cookie")),
         cd2_configured=settings.cd2_configured,
         push_backend=push_service.active_backend(_user_settings(user)),
+        results_page_size=int(cfg.get("results_page_size") or 10),
     )
 
 
@@ -334,6 +337,23 @@ async def cd2_push(body: Push115Request, user: OptionalUser) -> Push115Response:
 @router.post("/p115/push", response_model=Push115Response)
 async def p115_push(body: Push115Request, user: OptionalUser) -> Push115Response:
     return await offline_push(body, user)
+
+
+@router.get("/search/fuzzy", response_model=FuzzySearchResponse)
+async def fuzzy_search(
+    q: str = Query(..., min_length=1, description="搜索关键词，空格分隔"),
+    user: OptionalUser = None,
+) -> FuzzySearchResponse:
+    try:
+        items = await fuzzy_search_movies(q, user_settings=_user_settings(user))
+        return FuzzySearchResponse(
+            query=q.strip(),
+            results=[SearchPreviewItem(**item) for item in items],
+        )
+    except ScrapeError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"搜索失败: {exc}") from exc
 
 
 @router.get("/movie/{code}", response_model=MovieInfo)

@@ -19,6 +19,7 @@ DEFAULT_USER_SETTINGS = {
     "ai_translate_base_url": "https://api.openai.com/v1",
     "ai_translate_api_key": "",
     "ai_translate_model": "gpt-4o-mini",
+    "results_page_size": 10,
 }
 
 USER_SETTING_KEYS = frozenset(DEFAULT_USER_SETTINGS.keys())
@@ -95,6 +96,14 @@ def apply_settings_update(current: dict | None, updates: dict) -> dict:
             continue
         if key == "cd2_push_folders" and isinstance(value, list):
             stored[key] = value
+            continue
+        if key == "results_page_size":
+            try:
+                size = int(value)
+            except (TypeError, ValueError):
+                continue
+            if size in {10, 20, 30, 50, 100}:
+                stored[key] = size
             continue
         if value is not None:
             stored[key] = value

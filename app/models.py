@@ -42,6 +42,22 @@ class BatchResponse(BaseModel):
     errors: list[BatchError]
 
 
+class SearchPreviewItem(BaseModel):
+    code: str
+    title: str = ""
+    cover_url: str = ""
+    source_url: str = ""
+    release_date: str = ""
+    has_hd: bool = False
+    has_ultra: bool = False
+    has_subtitle: bool = False
+
+
+class FuzzySearchResponse(BaseModel):
+    query: str
+    results: list[SearchPreviewItem] = Field(default_factory=list)
+
+
 class ConfigResponse(BaseModel):
     base_url: str
     proxy_enabled: bool
@@ -49,6 +65,7 @@ class ConfigResponse(BaseModel):
     p115_configured: bool = False
     cd2_configured: bool = False
     push_backend: str = ""
+    results_page_size: int = 10
 
 
 class Push115Request(BaseModel):
@@ -175,6 +192,7 @@ class UserSettingsRequest(BaseModel):
     ai_translate_base_url: str | None = None
     ai_translate_api_key: str | None = None
     ai_translate_model: str | None = None
+    results_page_size: int | None = None
 
 
 class UserSettingsResponse(BaseModel):

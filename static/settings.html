@@ -14,7 +14,20 @@
         <p class="subtitle">登录后可保存代理、CD2、115、翻译等个人配置</p>
       </div>
       <div class="header-actions">
-        <a href="/" class="ghost-btn link-btn">返回首页</a>
+        <div id="userMenu" class="user-menu hidden">
+          <button type="button" class="user-menu-trigger" id="userMenuTrigger" aria-haspopup="true">
+            <span id="userMenuName"></span>
+            <span class="user-menu-caret" aria-hidden="true">▾</span>
+          </button>
+          <div class="user-menu-dropdown" id="userMenuDropdown" role="menu">
+            <a href="/" role="menuitem">首页</a>
+            <a href="/settings" role="menuitem" class="active">配置</a>
+            <a href="/history" role="menuitem">推送历史</a>
+            <button type="button" id="userMenuLogoutBtn" role="menuitem">退出</button>
+          </div>
+        </div>
+        <button id="loginBtn" class="ghost-btn" type="button">登录</button>
+        <button id="registerBtn" class="ghost-btn" type="button">注册</button>
       </div>
     </header>
 
@@ -99,6 +112,21 @@
         <label>AI 模型 <input id="aiModel" placeholder="gpt-4o-mini" /></label>
       </fieldset>
 
+      <fieldset>
+        <legend>界面偏好</legend>
+        <label>
+          搜索结果每页条数
+          <select id="resultsPageSize">
+            <option value="10">10</option>
+            <option value="20">20</option>
+            <option value="30">30</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+        </label>
+        <p class="field-hint">精确/模糊搜索结果列表的分页大小，登录后自动同步到账号</p>
+      </fieldset>
+
       <button type="submit">保存配置</button>
       <p id="settingsStatus" class="status hidden"></p>
     </form>
@@ -121,6 +149,7 @@
   </div>
 
   <script src="/static/auth.js"></script>
+  <script src="/static/nav.js"></script>
   <script src="/static/settings.js"></script>
 </body>
 </html>
