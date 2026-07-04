@@ -249,11 +249,24 @@ class SubtitleSearchResponse(BaseModel):
     providers: list[str] = Field(default_factory=list)
 
 
+class SubtitleBrowseFolder(BaseModel):
+    name: str
+    path: str
+
+
+class SubtitleBrowseFile(BaseModel):
+    name: str
+    path: str
+    parent_dir: str = ""
+    is_video: bool = False
+    size: str = ""
+
+
 class SubtitleBrowseResponse(BaseModel):
     current_path: str = ""
     parent_path: str | None = None
-    folders: list[dict[str, str]] = Field(default_factory=list)
-    files: list[dict[str, str]] = Field(default_factory=list)
+    folders: list[SubtitleBrowseFolder] = Field(default_factory=list)
+    files: list[SubtitleBrowseFile] = Field(default_factory=list)
     selectable: bool = False
 
 
