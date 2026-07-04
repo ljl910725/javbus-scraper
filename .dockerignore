@@ -1,0 +1,17 @@
+.env
+.venv
+venv
+__pycache__
+*.py[cod]
+*.egg-info
+.git
+.gitignore
+data/*
+!data/.gitkeep
+downloads/covers/*
+!downloads/covers/.gitkeep
+agent-transcripts
+.cursor
+*.md
+!README.md
+run_test.py

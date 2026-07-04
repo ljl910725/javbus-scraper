@@ -1,0 +1,52 @@
+# ============================================================
+# JavBus 爬虫 - 飞牛OS / Docker 一键部署
+# ============================================================
+#
+# 【飞牛OS 部署步骤】
+# 1. 文件管理 → 创建目录，例如：/vol1/1000/Docker/javbus-scraper
+# 2. 将本项目全部文件上传到该目录（或 git clone）
+# 3. 在同目录下手动创建 data、downloads 两个子文件夹
+# 4. 打开 Docker → 新增项目 → 路径选 javbus-scraper 文件夹
+# 5. 选择「创建 docker-compose.yml」，粘贴本文件内容后保存
+# 6. 修改下方「必改项」后点击「立即部署」
+# 7. 浏览器访问 http://飞牛IP:8000
+#
+# 【注意】
+# - 卷映射左侧请改为你的绝对路径（右键文件夹 → 查看详细信息 → 复制原始路径）
+# - CD2 若与本机同 NAS，容器内不能用 localhost，请填 NAS 局域网 IP，如 192.168.1.135:19798
+# - 代理、CD2、115 等个人配置建议登录后在网页 /settings 配置页填写
+# ============================================================
+
+services:
+  javbus-scraper:
+    build: .
+    image: javbus-scraper:latest
+    container_name: javbus-scraper
+    restart: unless-stopped
+    ports:
+      # 左侧为宿主机端口，冲突时可改为 18000:8000
+      - "8000:8000"
+    environment:
+      TZ: Asia/Shanghai
+      # ---------- 必改项 ----------
+      JWT_SECRET: change-me-to-a-random-secret
+      # ---------- 可选默认项（也可在网页配置页覆盖）----------
+      BASE_URL: https://www.javbus.com
+      # 容器访问宿主机代理示例（按实际修改）：
+      # HTTP_PROXY: http://192.168.1.1:7890
+      # HTTPS_PROXY: http://192.168.1.1:7890
+      PUSH_BACKEND: cd2
+      # CD2 与 NAS 同机时请写 NAS 局域网 IP，不要写 localhost
+      # CD2_HOST: 192.168.1.135:19798
+      # CD2_AUTH_MODE: token
+      # CD2_TOKEN: your_api_token
+    volumes:
+      # 将左侧路径改为你的实际绝对路径，例如 /vol1/1000/Docker/javbus-scraper/data
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s

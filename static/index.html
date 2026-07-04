@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>JavBus 番号爬虫</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="top-header">
+      <div>
+        <h1>JavBus 番号爬虫</h1>
+        <p class="subtitle">输入番号，抓取标题、演员、封面与磁力链接</p>
+      </div>
+      <div class="header-actions">
+        <span id="userBadge" class="user-badge hidden"></span>
+        <button id="loginBtn" class="ghost-btn" type="button">登录</button>
+        <button id="registerBtn" class="ghost-btn" type="button">注册</button>
+        <button id="logoutBtn" class="ghost-btn hidden" type="button">退出</button>
+        <a href="/settings" class="ghost-btn link-btn">配置</a>
+      </div>
+    </header>
+
+    <section class="search-panel">
+      <label for="codes">番号（每行一个，支持批量）</label>
+      <textarea id="codes" rows="5" placeholder="SSNI-730&#10;IPX-177"></textarea>
+
+      <div class="options">
+        <label class="checkbox">
+          <input type="checkbox" id="downloadCover" />
+          下载封面到本地
+        </label>
+        <button id="searchBtn" type="button">开始查询</button>
+      </div>
+
+      <div id="status" class="status hidden"></div>
+    </section>
+
+    <section id="configInfo" class="config-info hidden"></section>
+    <section id="pushHistorySection" class="push-history-section hidden">
+      <div class="push-history-header">
+        <h2>推送历史</h2>
+        <button id="refreshPushHistoryBtn" class="ghost-btn" type="button">刷新</button>
+      </div>
+      <div id="pushHistoryList" class="push-history-list"></div>
+    </section>
+    <section id="errors" class="errors hidden"></section>
+    <section id="results" class="results"></section>
+  </div>
+
+  <div id="authModal" class="modal hidden">
+    <div class="modal-card">
+      <button class="modal-close" type="button" data-close-modal>&times;</button>
+      <h2 id="authModalTitle">登录</h2>
+      <form id="authForm">
+        <label id="emailField" class="hidden">
+          邮箱
+          <input type="email" id="authEmail" />
+        </label>
+        <label>
+          用户名
+          <input type="text" id="authUsername" required />
+        </label>
+        <label>
+          密码
+          <input type="password" id="authPassword" required />
+        </label>
+        <button type="submit" id="authSubmitBtn">确认</button>
+      </form>
+      <p id="authError" class="auth-error hidden"></p>
+    </div>
+  </div>
+
+  <div id="lightbox" class="lightbox hidden" aria-hidden="true">
+    <button class="lightbox-close" type="button" data-close-lightbox aria-label="关闭">&times;</button>
+    <button id="lightboxPrev" class="lightbox-nav lightbox-prev" type="button" aria-label="上一张">&lsaquo;</button>
+    <button id="lightboxNext" class="lightbox-nav lightbox-next" type="button" aria-label="下一张">&rsaquo;</button>
+    <div class="lightbox-content">
+      <div class="lightbox-stage">
+        <img id="lightboxImage" alt="预览图" />
+      </div>
+      <div id="lightboxCounter" class="lightbox-counter"></div>
+      <div id="lightboxThumbs" class="lightbox-thumbs"></div>
+    </div>
+  </div>
+
+  <div id="pushFolderModal" class="modal hidden">
+    <div class="modal-card push-folder-modal-card">
+      <div class="modal-header">
+        <h2>选择推送目录</h2>
+        <button id="closePushFolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <p class="field-hint">请选择要将磁力推送到哪个目录</p>
+      <div id="pushFolderChoices" class="push-folder-choices"></div>
+    </div>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script src="/static/app.js"></script>
+</body>
+</html>

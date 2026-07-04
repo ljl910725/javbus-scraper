@@ -1,0 +1,11 @@
+fastapi
+uvicorn[standard]
+httpx
+beautifulsoup4
+lxml
+pydantic-settings
+python-multipart
+aiofiles
+clouddrive2-client
+bcrypt
+python-jose[cryptography]

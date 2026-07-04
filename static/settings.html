@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>配置 - JavBus 爬虫</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+  <div class="container">
+    <header class="top-header">
+      <div>
+        <h1>用户配置</h1>
+        <p class="subtitle">登录后可保存代理、CD2、115、翻译等个人配置</p>
+      </div>
+      <div class="header-actions">
+        <a href="/" class="ghost-btn link-btn">返回首页</a>
+      </div>
+    </header>
+
+    <section id="settingsLoginHint" class="errors">
+      请先 <a href="/">返回首页登录</a> 后再保存配置。
+    </section>
+
+    <form id="settingsForm" class="settings-form hidden">
+      <fieldset>
+        <legend>网络代理</legend>
+        <label class="checkbox-label">
+          <input id="proxyEnabled" type="checkbox" />
+          启用代理（访问 JavBus 数据源时使用）
+        </label>
+        <label>HTTP 代理 <input id="httpProxy" placeholder="http://127.0.0.1:7890" /></label>
+        <label>HTTPS 代理 <input id="httpsProxy" placeholder="留空则使用 HTTP 代理" /></label>
+        <p class="field-hint">部分地区访问 JavBus 需要代理，保存后登录状态下查询会自动使用你的代理配置</p>
+      </fieldset>
+
+      <fieldset>
+        <legend>推送配置</legend>
+        <label>
+          推送方式
+          <select id="pushBackend">
+            <option value="cd2">CloudDrive2</option>
+            <option value="p115">115 直连</option>
+          </select>
+        </label>
+
+        <div id="cd2Section">
+          <label>CD2 地址 <input id="cd2Host" placeholder="192.168.1.135:19798" /></label>
+          <p class="field-hint">gRPC 地址，填写 host:port 即可，无需加 http://</p>
+          <label>
+            CD2 认证方式
+            <select id="cd2AuthMode">
+              <option value="password">用户名 + 密码</option>
+              <option value="token">API 令牌</option>
+            </select>
+          </label>
+          <div id="cd2PasswordFields">
+            <label>CD2 用户名 <input id="cd2Username" autocomplete="username" /></label>
+            <label>CD2 密码 <input id="cd2Password" type="password" autocomplete="current-password" /></label>
+          </div>
+          <div id="cd2TokenFields" class="hidden">
+            <label>
+              CD2 API 令牌
+              <input id="cd2Token" type="password" placeholder="在 CD2 管理后台创建的 API Token" />
+            </label>
+            <p class="field-hint">令牌需包含离线下载权限（allow_add_offline_download）</p>
+          </div>
+
+          <div class="push-folder-section">
+            <div class="push-folder-header">
+              <span>推送目录映射</span>
+              <button id="addPushFolderBtn" class="ghost-btn" type="button">添加目录</button>
+            </div>
+            <p class="field-hint">可配置多个名称与路径，推送时选择推到哪个目录</p>
+            <div id="pushFolderList" class="push-folder-list"></div>
+          </div>
+
+          <div class="settings-actions">
+            <button id="testCd2Btn" class="ghost-btn" type="button">测试连接</button>
+            <span id="cd2TestStatus" class="inline-status"></span>
+          </div>
+        </div>
+
+        <label>115 Cookie <textarea id="p115Cookie" rows="3" placeholder="UID=...; CID=...; SEID=..."></textarea></label>
+      </fieldset>
+
+      <fieldset>
+        <legend>翻译配置</legend>
+        <label>
+          翻译引擎
+          <select id="translateEngine">
+            <option value="free">免费引擎 (MyMemory)</option>
+            <option value="ai">AI 翻译</option>
+          </select>
+        </label>
+        <label>目标语言 <input id="translateTargetLang" value="zh-CN" /></label>
+        <label>AI API Base URL <input id="aiBaseUrl" placeholder="https://api.openai.com/v1" /></label>
+        <label>AI API Key <input id="aiApiKey" type="password" /></label>
+        <label>AI 模型 <input id="aiModel" placeholder="gpt-4o-mini" /></label>
+      </fieldset>
+
+      <button type="submit">保存配置</button>
+      <p id="settingsStatus" class="status hidden"></p>
+    </form>
+  </div>
+
+  <div id="folderModal" class="modal hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header">
+        <h2>选择推送目录</h2>
+        <button id="closeFolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-modal-toolbar">
+        <button id="folderUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="folderCurrentPath" class="folder-current-path">/</span>
+      </div>
+      <p class="field-hint">仅支持离线下载的目录可设为推送目录（标记为「可离线」）</p>
+      <div id="folderList" class="folder-list"></div>
+      <p id="folderModalStatus" class="inline-status"></p>
+    </div>
+  </div>
+
+  <script src="/static/auth.js"></script>
+  <script src="/static/settings.js"></script>
+</body>
+</html>
