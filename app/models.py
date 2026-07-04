@@ -193,6 +193,7 @@ class UserSettingsRequest(BaseModel):
     ai_translate_api_key: str | None = None
     ai_translate_model: str | None = None
     results_page_size: int | None = None
+    subtitle_save_dir: str | None = None
 
 
 class UserSettingsResponse(BaseModel):
@@ -228,3 +229,45 @@ class TranslateResponse(BaseModel):
     translated: str
     engine: str
     target_lang: str
+
+
+class SubtitleItem(BaseModel):
+    provider: str
+    sub_id: str
+    rev_id: str = ""
+    language: str = ""
+    language_code: str = ""
+    title: str = ""
+    uploader: str = ""
+    downloads: int = 0
+    detail_url: str = ""
+
+
+class SubtitleSearchResponse(BaseModel):
+    code: str
+    results: list[SubtitleItem] = Field(default_factory=list)
+    providers: list[str] = Field(default_factory=list)
+
+
+class SubtitleBrowseResponse(BaseModel):
+    current_path: str = ""
+    parent_path: str | None = None
+    folders: list[dict[str, str]] = Field(default_factory=list)
+    selectable: bool = False
+
+
+class SubtitleSaveRequest(BaseModel):
+    provider: str
+    sub_id: str
+    rev_id: str = ""
+    detail_url: str
+    code: str = ""
+    language_code: str = ""
+    target_dir: str
+    filename: str
+
+
+class SubtitleSaveResponse(BaseModel):
+    path: str
+    filename: str
+    size: int

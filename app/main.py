@@ -8,6 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from app.db import init_db
 from app.routes.api import router as api_router
 from app.routes.auth import router as auth_router
+from app.routes.subtitles import router as subtitles_router
 from app.routes.settings import router as settings_router
 from app.routes.translate import router as translate_router
 from app.scraper.client import close_client
@@ -30,6 +31,7 @@ app = FastAPI(
 app.include_router(api_router)
 app.include_router(auth_router)
 app.include_router(settings_router)
+app.include_router(subtitles_router)
 app.include_router(translate_router)
 
 static_dir = Path(__file__).resolve().parent.parent / "static"

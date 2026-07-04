@@ -111,6 +111,44 @@
     </div>
   </div>
 
+  <div id="subtitleModal" class="modal hidden">
+    <div class="modal-card subtitle-modal-card">
+      <div class="modal-header">
+        <h2 id="subtitleModalTitle">外挂字幕</h2>
+        <button id="closeSubtitleModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div id="subtitleModalList" class="subtitle-list"></div>
+    </div>
+  </div>
+
+  <div id="subtitleSaveModal" class="modal hidden">
+    <div class="modal-card folder-modal-card subtitle-save-modal-card">
+      <div class="modal-header">
+        <h2>保存字幕到目录</h2>
+        <button id="closeSubtitleSaveModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <label class="subtitle-save-filename">
+        文件名
+        <input id="subtitleSaveFilename" type="text" placeholder="SSIS-001.zh.srt" />
+      </label>
+      <label class="subtitle-save-target">
+        保存目录
+        <input id="subtitleSaveTargetDir" type="text" readonly placeholder="请从下方选择目录" />
+      </label>
+      <div class="folder-modal-toolbar">
+        <button id="subtitleSaveUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="subtitleSaveCurrentPath" class="folder-current-path">/</span>
+        <button id="subtitleSaveUseDirBtn" class="ghost-btn" type="button">使用当前目录</button>
+      </div>
+      <p class="field-hint">目录为 Docker 挂载路径，可在 compose 中把 NAS 文件夹映射到 downloads 等目录</p>
+      <div id="subtitleSaveFolderList" class="folder-list"></div>
+      <div class="subtitle-save-actions">
+        <button id="subtitleSaveConfirmBtn" type="button">保存到目录</button>
+      </div>
+      <p id="subtitleSaveModalStatus" class="inline-status"></p>
+    </div>
+  </div>
+
   <script src="/static/auth.js"></script>
   <script src="/static/nav.js"></script>
   <script src="/static/app.js"></script>

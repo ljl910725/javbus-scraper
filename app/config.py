@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     https_proxy: str | None = None
     javbus_cookie: str | None = None
     cover_dir: str = "downloads/covers"
+    subtitle_browse_roots: str = "downloads"
     request_delay: float = 0.8
     request_timeout: float = 30.0
     p115_cookie: str | None = None

@@ -20,6 +20,7 @@ DEFAULT_USER_SETTINGS = {
     "ai_translate_api_key": "",
     "ai_translate_model": "gpt-4o-mini",
     "results_page_size": 10,
+    "subtitle_save_dir": "",
 }
 
 USER_SETTING_KEYS = frozenset(DEFAULT_USER_SETTINGS.keys())

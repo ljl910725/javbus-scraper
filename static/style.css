@@ -788,6 +788,120 @@ button:disabled {
   white-space: nowrap;
 }
 
+.subtitles {
+  border-top: 1px solid var(--border);
+  padding: 1rem 1.25rem;
+}
+
+.subtitles-header,
+.subtitle-modal-card .modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-bottom: 0.75rem;
+}
+
+.subtitles h3,
+#subtitleModalTitle {
+  margin: 0;
+  font-size: 0.95rem;
+}
+
+.subtitle-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.subtitle-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.6rem 0.75rem;
+  border-radius: 8px;
+  background: var(--bg);
+  font-size: 0.85rem;
+}
+
+.subtitle-item-main {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+  flex: 1;
+}
+
+.subtitle-lang {
+  display: inline-block;
+  width: fit-content;
+  padding: 0.1rem 0.4rem;
+  border-radius: 999px;
+  background: var(--tag-bg);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+}
+
+.subtitle-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle-meta {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.subtitle-status,
+.subtitle-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.subtitle-modal-card {
+  width: min(720px, 92vw);
+}
+
+.subtitle-item-actions {
+  display: flex;
+  flex-shrink: 0;
+  gap: 0.35rem;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.subtitle-save-modal-card {
+  width: min(760px, 94vw);
+}
+
+.subtitle-save-filename,
+.subtitle-save-target {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin-bottom: 0.75rem;
+}
+
+.subtitle-save-filename input,
+.subtitle-save-target input {
+  width: 100%;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg);
+  color: var(--text);
+}
+
+.subtitle-save-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 0.75rem;
+}
+
 .magnet-badges {
   display: flex;
   gap: 0.25rem;

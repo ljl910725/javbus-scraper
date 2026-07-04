@@ -19,14 +19,17 @@ services:
     restart: unless-stopped
     ports:
       - "18000:8000"
+    volumes:
+      - ./data:/app/data
+      - ./downloads:/app/downloads
+      # 若要把字幕直接存到影片目录，可再加挂载，例如：
+      # - /vol1/1000/你的影片目录:/app/downloads/subtitles
     environment:
       TZ: Asia/Shanghai
       JWT_SECRET: change-me-to-a-random-secret
       BASE_URL: https://www.javbus.com
       PUSH_BACKEND: cd2
-    volumes:
-      - ./data:/vol1/1000/docker/javbus-scraper/data
-      - ./downloads:/vol1/1000/docker/javbus-scraper/downloads
+      SUBTITLE_BROWSE_ROOTS: downloads,downloads/subtitles
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/api/health')"]
       interval: 30s
