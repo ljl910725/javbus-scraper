@@ -29,6 +29,7 @@ let nosubBrowseParent = null;
 let nosubScanData = null;
 let nosubAbort = null;
 let pendingNosubItem = null;
+let nosubLookupList = [];
 
 function setNosubStatus(message, isError = false, loading = false) {
   if (!nosubStatusEl) return;
@@ -165,46 +166,32 @@ function nosubGallery(item) {
   }));
 }
 
-function renderNosubThumbs(item) {
-  const images = item.images || [];
-  if (!images.length) {
-    return '<div class="nosub-thumb-empty">目录下没有图片</div>';
-  }
-  const first = images[0];
-  const rest = images.slice(1, 3);
-  return `
-    <div class="nosub-thumbs">
-      <img class="nosub-thumb" src="${escapeAttr(nosubImageUrl(first))}" alt="${escapeAttr(item.code || item.name)}" data-gallery-index="0" />
-      ${
-        rest.length
-          ? `<div class="nosub-thumbs-more">${rest
-              .map(
-                (path, index) =>
-                  `<img class="nosub-thumb" src="${escapeAttr(nosubImageUrl(path))}" alt="${escapeAttr(item.code || item.name)}" data-gallery-index="${index + 1}" />`
-              )
-              .join("")}</div>`
-          : ""
-      }
-    </div>`;
-}
-
 function renderNosubItem(item) {
+  const coverHtml = (item.images || []).length
+    ? `<img src="${escapeAttr(nosubImageUrl(item.images[0]))}" alt="${escapeAttr(item.code || item.name)}" loading="lazy" data-gallery-index="0" />`
+    : '<div class="fuzzy-cover-placeholder">无封面</div>';
   const codeLabel = item.code || "未识别番号";
   const partLabel = item.part ? ` · ${item.part}` : "";
-  const metaParts = [item.date, item.studio, (item.actors || []).join("、")].filter(Boolean);
-  const sizeText = typeof formatDupSize === "function" ? formatDupSize(item.size) : "";
+  const title = item.title || item.name || "未知标题";
+  const dateText = item.date
+    ? `<span class="fuzzy-date">${escapeHtml(item.date)}</span>`
+    : "";
+  const studioText = item.studio
+    ? `<span class="fuzzy-date">${escapeHtml(item.studio)}</span>`
+    : "";
   return `
-    <article class="nosub-item" data-path="${escapeAttr(item.path)}" data-gallery="${encodeGallery(nosubGallery(item))}">
-      ${renderNosubThumbs(item)}
-      <div class="nosub-body">
-        <h3 class="nosub-code">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</h3>
-        ${item.title ? `<p class="nosub-title">${escapeHtml(item.title)}</p>` : ""}
-        ${metaParts.length ? `<p class="nosub-meta">${escapeHtml(metaParts.join(" · "))}</p>` : ""}
-        ${item.plot ? `<p class="nosub-plot">${escapeHtml(item.plot)}</p>` : ""}
-        <p class="nosub-path"><strong>${escapeHtml(item.name)}</strong></p>
-        <p class="nosub-path">${escapeHtml(item.path)}${sizeText ? ` · ${sizeText}` : ""}</p>
-        <div class="nosub-actions">
-          <button class="nosub-lookup-btn" type="button" data-path="${escapeAttr(item.path)}">查找</button>
+    <article class="fuzzy-item list-item nosub-card" data-path="${escapeAttr(item.path)}" data-gallery="${encodeGallery(nosubGallery(item))}">
+      <div class="fuzzy-cover">${coverHtml}</div>
+      <div class="fuzzy-info">
+        <div class="fuzzy-code-row">
+          <span class="fuzzy-code">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>
+        </div>
+        <div class="fuzzy-title">${escapeHtml(title)}</div>
+        ${dateText}
+        ${studioText}
+        <div class="nosub-filename" title="${escapeAttr(item.path)}">${escapeHtml(item.name)}</div>
+        <div class="list-item-actions">
+          <button class="nosub-lookup-btn ghost-btn" type="button" data-path="${escapeAttr(item.path)}">查找</button>
         </div>
       </div>
     </article>`;
@@ -214,9 +201,11 @@ function renderNosubResults(data) {
   nosubScanData = data;
   const items = data?.items || [];
   if (!items.length) {
+    nosubResultsEl.classList.remove("fuzzy-results");
     nosubResultsEl.innerHTML = '<p class="folder-empty">没有找到无字幕视频</p>';
     return;
   }
+  nosubResultsEl.classList.add("fuzzy-results");
   nosubResultsEl.innerHTML = items.map(renderNosubItem).join("");
 }
 
@@ -383,8 +372,49 @@ async function deleteNosubOriginal(item) {
 function closeNosubLookupModal() {
   nosubLookupModal?.classList.add("hidden");
   pendingNosubItem = null;
+  nosubLookupList = [];
   if (nosubLookupResults) nosubLookupResults.innerHTML = "";
   setNosubLookupStatus("");
+}
+
+function nosubQueryCodes(code) {
+  const value = (code || "").trim().toUpperCase().replace(/_/g, "-");
+  if (!value) return [];
+  const codes = [value];
+  const stripped = value.match(/^1([A-Z]{2,10}-\d{2,7})$/);
+  if (stripped) codes.unshift(stripped[1]);
+  return [...new Set(codes)];
+}
+
+async function fuzzySearchCode(code) {
+  const params = new URLSearchParams({ q: code });
+  const res = await authFetch(`/api/search/fuzzy?${params}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+  return data.results || [];
+}
+
+function renderNosubLookupList(results) {
+  nosubLookupList = results;
+  nosubLookupResults.innerHTML = `<div class="fuzzy-results">${results.map(renderListItem).join("")}</div>`;
+  setNosubLookupStatus(
+    `找到 ${results.length} 条，点击条目查看详情。可直接复制或推送，推送成功后会删除原文件。`
+  );
+}
+
+async function showNosubLookupDetail(code) {
+  setNosubLookupStatus(`正在加载 ${code} 详情...`, false, true);
+  let movie = exactMovieCache.get(code);
+  if (!movie) {
+    movie = await loadMovieDetail(code);
+    exactMovieCache.set(code, movie);
+  }
+  const back = nosubLookupList.length
+    ? '<div class="detail-back-bar"><button class="ghost-btn nosub-back-list-btn" type="button">← 返回列表</button></div>'
+    : "";
+  nosubLookupResults.innerHTML = `${back}${renderMovieCard(movie)}`;
+  setNosubLookupStatus(`已加载 ${movie.code}，可复制磁力或推送到 CD2。推送成功后会删除原文件。`);
+  loadSubtitlesForCode(movie.code);
 }
 
 async function lookupNosubItem(item) {
@@ -394,19 +424,38 @@ async function lookupNosubItem(item) {
     return;
   }
   pendingNosubItem = item;
+  nosubLookupList = [];
   nosubLookupTitle.textContent = `查找 ${code}`;
   nosubLookupHint.textContent = `原文件：${item.name}`;
   nosubLookupResults.innerHTML = "";
-  setNosubLookupStatus(`正在查询 ${code}...`, false, true);
   nosubLookupModal.classList.remove("hidden");
-  try {
-    const movie = await loadMovieDetail(code);
-    nosubLookupResults.innerHTML = renderMovieCard(movie);
-    setNosubLookupStatus(`已加载 ${movie.code}，可复制磁力或推送到 CD2。推送成功后会删除原文件。`);
-    loadSubtitlesForCode(movie.code);
-  } catch (err) {
-    setNosubLookupStatus(err.message || "查询失败", true);
+
+  const queries = nosubQueryCodes(code);
+  let lastError = "";
+  for (const query of queries) {
+    setNosubLookupStatus(`正在搜索 ${query}...`, false, true);
+    try {
+      const results = await fuzzySearchCode(query);
+      if (results.length) {
+        nosubLookupTitle.textContent = `查找 ${query}`;
+        renderNosubLookupList(results);
+        return;
+      }
+    } catch (err) {
+      lastError = err.message || "搜索失败";
+    }
   }
+
+  for (const query of queries) {
+    setNosubLookupStatus(`正在查询 ${query} 详情...`, false, true);
+    try {
+      await showNosubLookupDetail(query);
+      return;
+    } catch (err) {
+      lastError = err.message || "查询失败";
+    }
+  }
+  setNosubLookupStatus(lastError || `未找到 ${code}`, true);
 }
 
 function afterNosubPushSuccess() {
@@ -465,16 +514,72 @@ nosubResultsEl?.addEventListener("click", (event) => {
     if (item) lookupNosubItem(item);
     return;
   }
-  const thumb = event.target.closest(".nosub-thumb");
-  if (thumb) {
-    const card = thumb.closest(".nosub-item");
+  const card = event.target.closest(".nosub-card");
+  if (card && event.target.closest(".fuzzy-cover")) {
     const gallery = parseGallery(card);
-    const index = Number(thumb.dataset.galleryIndex || 0);
-    if (gallery.length) openLightbox(gallery, index);
+    if (gallery.length) openLightbox(gallery, 0);
   }
 });
 
 nosubLookupResults?.addEventListener("click", async (event) => {
+  if (event.target.closest(".nosub-back-list-btn")) {
+    renderNosubLookupList(nosubLookupList);
+    return;
+  }
+
+  const copyBestBtn = event.target.closest(".copy-best-btn");
+  if (copyBestBtn) {
+    event.stopPropagation();
+    const code = copyBestBtn.dataset.code;
+    const original = copyBestBtn.textContent;
+    try {
+      copyBestBtn.disabled = true;
+      copyBestBtn.textContent = "获取中...";
+      const link = copyBestBtn.dataset.link || "";
+      let resolved = link;
+      if (!resolved) {
+        const movie = exactMovieCache.get(code) || (await loadMovieDetail(code));
+        exactMovieCache.set(code, movie);
+        resolved = movie.magnets?.[0]?.link || "";
+      }
+      if (!resolved) throw new Error("没有可复制的磁力链接");
+      await copyMagnetLink(resolved, copyBestBtn);
+    } catch (err) {
+      setNosubLookupStatus(err.message || "复制失败", true);
+      copyBestBtn.textContent = original;
+    } finally {
+      copyBestBtn.disabled = false;
+    }
+    return;
+  }
+
+  const subtitleOpenBtn = event.target.closest(".subtitle-open-btn");
+  if (subtitleOpenBtn) {
+    event.stopPropagation();
+    openSubtitleModal(subtitleOpenBtn.dataset.code);
+    return;
+  }
+
+  const listPushBest = event.target.closest(".list-item-actions .push-best-btn");
+  if (listPushBest?.dataset.code) {
+    event.stopPropagation();
+    const existing = listPushBest.dataset.link;
+    await pushToOffline({
+      magnets: existing ? [existing] : [],
+      code: listPushBest.dataset.code,
+      pushBest: !existing,
+      button: listPushBest,
+      onSuccess: afterNosubPushSuccess(),
+    });
+    return;
+  }
+
+  const listItem = event.target.closest(".fuzzy-item");
+  if (listItem?.dataset.code && !event.target.closest(".list-item-actions") && !event.target.closest(".card")) {
+    await showNosubLookupDetail(listItem.dataset.code);
+    return;
+  }
+
   const magnetToggleBtn = event.target.closest(".magnet-toggle-btn");
   if (magnetToggleBtn) {
     const magnetsSection = magnetToggleBtn.closest(".magnets");

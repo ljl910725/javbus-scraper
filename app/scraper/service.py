@@ -3,6 +3,7 @@ import re
 from pathlib import Path
 
 import aiofiles
+import httpx
 
 from app.config import settings
 from app.models import MovieInfo
@@ -15,6 +16,7 @@ from app.scraper.parser import (
     build_search_url,
     find_search_results,
     is_valid_detail,
+    lookup_codes,
     normalize_code,
     parse_detail_page,
     parse_fuzzy_search_page,
@@ -26,6 +28,14 @@ class ScrapeError(Exception):
     pass
 
 
+def _is_not_found(exc: Exception) -> bool:
+    return (
+        isinstance(exc, httpx.HTTPStatusError)
+        and exc.response is not None
+        and exc.response.status_code in {404, 410}
+    )
+
+
 async def _fetch_detail(
     client: JavBusClient,
     url: str,
@@ -35,32 +45,74 @@ async def _fetch_detail(
     return parse_detail_page(html, source_url=url, expected_code=code)
 
 
+async def _try_detail(
+    client: JavBusClient,
+    url: str,
+    code: str,
+) -> ParsedMovie | None:
+    try:
+        movie = await _fetch_detail(client, url, code)
+    except httpx.HTTPStatusError as exc:
+        if _is_not_found(exc):
+            return None
+        raise
+    return movie if is_valid_detail(movie) else None
+
+
+async def _search_detail(
+    client: JavBusClient,
+    code: str,
+) -> ParsedMovie | None:
+    search_url = build_search_url(code)
+    try:
+        search_html = await client.get_text(search_url)
+    except httpx.HTTPStatusError as exc:
+        if _is_not_found(exc):
+            return None
+        raise
+
+    slugs = find_search_results(search_html, code)
+    for slug in slugs:
+        movie = await _try_detail(client, search_result_url(slug), code)
+        if movie:
+            return movie
+
+    wanted = {item.upper() for item in lookup_codes(code)}
+    previews = parse_fuzzy_search_page(search_html, source_url=search_url)
+    matches = [item for item in previews if item.code.upper() in wanted]
+    if not matches and len(previews) == 1:
+        matches = previews
+    for preview in matches:
+        movie = await _try_detail(client, preview.source_url, preview.code or code)
+        if movie:
+            return movie
+    return None
+
+
 async def _resolve_detail(
     client: JavBusClient,
     code: str,
 ) -> ParsedMovie:
-    url = build_detail_url(code)
-    movie = await _fetch_detail(client, url, code)
-    if is_valid_detail(movie):
-        return movie
+    candidates = lookup_codes(code)
+    if not candidates:
+        raise ScrapeError("番号不能为空")
 
-    uncensored_url = build_detail_url(code, uncensored=True)
-    if uncensored_url != url:
-        movie = await _fetch_detail(client, uncensored_url, code)
-        if is_valid_detail(movie):
+    for candidate in candidates:
+        movie = await _try_detail(client, build_detail_url(candidate), candidate)
+        if movie:
             return movie
 
-    search_url = build_search_url(code)
-    search_html = await client.get_text(search_url)
-    results = find_search_results(search_html, code)
-    if not results:
-        raise ScrapeError(f"未找到番号 {code} 的匹配结果")
+        uncensored_url = build_detail_url(candidate, uncensored=True)
+        if uncensored_url != build_detail_url(candidate):
+            movie = await _try_detail(client, uncensored_url, candidate)
+            if movie:
+                return movie
 
-    result_url = search_result_url(results[0])
-    movie = await _fetch_detail(client, result_url, code)
-    if not is_valid_detail(movie):
-        raise ScrapeError(f"番号 {code} 详情页解析失败")
-    return movie
+        movie = await _search_detail(client, candidate)
+        if movie:
+            return movie
+
+    raise ScrapeError(f"未找到番号 {code} 的匹配结果")
 
 
 def _to_movie_info(movie: ParsedMovie) -> MovieInfo:

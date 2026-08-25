@@ -26,7 +26,22 @@ class ParsedMovie:
 
 
 def normalize_code(code: str) -> str:
-    return code.strip().upper().replace(" ", "")
+    value = code.strip().upper().replace(" ", "").replace("_", "-")
+    fanza_prefix = re.fullmatch(r"1([A-Z]{2,10}-\d{2,7})", value)
+    if fanza_prefix:
+        return fanza_prefix.group(1)
+    return value
+
+
+def lookup_codes(code: str) -> list[str]:
+    normalized = normalize_code(code)
+    if not normalized:
+        return []
+    codes = [normalized]
+    raw = code.strip().upper().replace(" ", "").replace("_", "-")
+    if raw and raw != normalized:
+        codes.append(raw)
+    return list(dict.fromkeys(codes))
 
 
 def build_detail_url(code: str, *, uncensored: bool = False) -> str:

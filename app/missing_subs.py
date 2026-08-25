@@ -233,13 +233,13 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
                 videos += 1
                 if has_c_subtitle(name):
                     continue
-                code = extract_jav_code(name)
                 names = _list_dir_names(dirpath, dir_cache)
                 stem = Path(name).stem
                 nfo_path = _pick_nfo(dirpath, names, stem)
                 nfo = parse_nfo(Path(nfo_path)) if nfo_path else {
                     "title": "", "plot": "", "date": "", "studio": "", "actors": [], "num": "",
                 }
+                code = extract_jav_code(name) or extract_jav_code(nfo.get("num") or "") or nfo.get("num") or ""
                 path = Path(dirpath) / name
                 try:
                     stat = path.stat()
@@ -250,7 +250,7 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
                     mtime = "0"
                 items.append(
                     {
-                        "code": code or nfo.get("num") or "",
+                        "code": code,
                         "part": extract_part_tag(name),
                         "name": name,
                         "path": str(path),

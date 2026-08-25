@@ -66,6 +66,13 @@ class JavBusClient:
                 response = await self._client.get(url, headers=headers)
                 response.raise_for_status()
                 return response
+            except httpx.HTTPStatusError as exc:
+                status = exc.response.status_code if exc.response is not None else 0
+                if 400 <= status < 500 and status != 429:
+                    raise
+                last_error = exc
+                if attempt < retries - 1:
+                    await asyncio.sleep(0.5 * (attempt + 1))
             except (httpx.HTTPError, httpx.TimeoutException) as exc:
                 last_error = exc
                 if attempt < retries - 1:

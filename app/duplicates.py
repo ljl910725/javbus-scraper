@@ -26,8 +26,8 @@ _CODE_RE = re.compile(
     r"FC2[-_]?PPV[-_]?\d{5,8}"
     r"|\d{3}[A-Z]{2,8}[-_]?\d{2,6}"
     r"|[A-Z]{1,4}\d{1,3}[-_]\d{2,7}"
-    r"|[A-Z]{2,10}[-_]\d{2,7}"
-    r"|[A-Z]{2,10}\d{3,7}"
+    r"|1?[A-Z]{2,10}[-_]\d{2,7}"
+    r"|1?[A-Z]{2,10}\d{3,7}"
     r")"
     r"(?:$|[^A-Z0-9])"
 )
@@ -50,6 +50,9 @@ def _normalize_code(raw: str) -> str:
     numbered_studio = re.fullmatch(r"(\d{3}[A-Z]{2,8})-?(\d+)", value)
     if numbered_studio:
         return f"{numbered_studio.group(1)}-{numbered_studio.group(2)}"
+    fanza_prefix = re.fullmatch(r"1([A-Z]{2,10}-\d{2,7})", value)
+    if fanza_prefix:
+        value = fanza_prefix.group(1)
     letter_num = re.fullmatch(r"([A-Z]{2,10})(\d{3,7})", value)
     if letter_num:
         return f"{letter_num.group(1)}-{letter_num.group(2)}"
