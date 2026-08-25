@@ -2342,10 +2342,14 @@ fuzzyQueryInput.addEventListener("keydown", (event) => {
 });
 
 const HOME_TAB_KEY = "javbus_home_tab";
-const HOME_TABS = ["search", "nosub", "dup", "cleanup", "p115"];
+
+function homeTabNames() {
+  return Array.from(document.querySelectorAll(".app-tab[data-tab]"), (btn) => btn.dataset.tab);
+}
 
 function setHomeTab(tab, { persist = true } = {}) {
-  const next = HOME_TABS.includes(tab) ? tab : "search";
+  const tabs = homeTabNames();
+  const next = tabs.includes(tab) ? tab : tabs[0] || "search";
   document.querySelectorAll(".app-tab").forEach((btn) => {
     const active = btn.dataset.tab === next;
     btn.classList.toggle("active", active);
@@ -2370,6 +2374,7 @@ function setHomeTab(tab, { persist = true } = {}) {
 document.querySelector(".app-tabs")?.addEventListener("click", (event) => {
   const btn = event.target.closest(".app-tab");
   if (!btn?.dataset.tab) return;
+  event.preventDefault();
   setHomeTab(btn.dataset.tab);
 });
 
@@ -2383,15 +2388,21 @@ const storedTab = (() => {
     return "";
   }
 })();
+const bootTabs = homeTabNames();
+const bootTab = bootTabs.includes(bootHashTab)
+  ? bootHashTab
+  : bootTabs.includes(storedTab)
+    ? storedTab
+    : "search";
 if (bootDetailCode && bootParams.get("view") === "detail") {
   setHomeTab("search", { persist: false });
   setSearchMode("exact");
   handleDetailDeepLink();
 } else if (!restoreSearchState()) {
   setSearchMode("exact");
-  setHomeTab(HOME_TABS.includes(bootHashTab) ? bootHashTab : storedTab || "search", { persist: true });
+  setHomeTab(bootTab, { persist: true });
 } else {
-  setHomeTab(HOME_TABS.includes(bootHashTab) ? bootHashTab : storedTab || "search", { persist: true });
+  setHomeTab(bootTab, { persist: true });
 }
 
 closePushFolderModalBtn.addEventListener("click", closePushFolderModal);

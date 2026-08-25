@@ -48,16 +48,23 @@ cover_dir.mkdir(parents=True, exist_ok=True)
 app.mount("/covers", StaticFiles(directory=str(cover_dir)), name="covers")
 
 
+def _html_page(name: str) -> FileResponse:
+    return FileResponse(
+        static_dir / name,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/")
 async def index() -> FileResponse:
-    return FileResponse(static_dir / "index.html")
+    return _html_page("index.html")
 
 
 @app.get("/history")
 async def history_page() -> FileResponse:
-    return FileResponse(static_dir / "history.html")
+    return _html_page("history.html")
 
 
 @app.get("/settings")
 async def settings_page() -> FileResponse:
-    return FileResponse(static_dir / "settings.html")
+    return _html_page("settings.html")
