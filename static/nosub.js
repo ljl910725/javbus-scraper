@@ -203,8 +203,9 @@ function nosubGallery(item) {
 }
 
 function renderNosubItem(item) {
-  const coverHtml = (item.images || []).length
-    ? `<img src="${escapeAttr(nosubImageUrl(item.images[0]))}" alt="${escapeAttr(item.code || item.name)}" loading="lazy" data-gallery-index="0" />`
+  const images = item.images || [];
+  const coverHtml = images.length
+    ? renderPrivacyImage(nosubImageUrl(images[0]), "", item.code || item.name, images.length - 1, { compact: true })
     : '<div class="fuzzy-cover-placeholder">无封面</div>';
   const codeLabel = item.code || "未识别番号";
   const partLabel = item.part ? ` · ${item.part}` : "";
@@ -666,9 +667,16 @@ nosubResultsEl?.addEventListener("click", (event) => {
     return;
   }
   const card = event.target.closest(".nosub-card");
-  if (card && event.target.closest(".fuzzy-cover")) {
-    const gallery = parseGallery(card);
-    if (gallery.length) openLightbox(gallery, 0);
+  if (card && event.target.closest(".privacy-hide-btn")) {
+    event.stopPropagation();
+    const privacyImage = event.target.closest(".privacy-image");
+    if (privacyImage) hidePrivacyImage(privacyImage);
+    return;
+  }
+  if (card && event.target.closest(".privacy-image")) {
+    event.stopPropagation();
+    revealPrivacyImage(event.target.closest(".privacy-image"));
+    return;
   }
 });
 
@@ -711,9 +719,28 @@ nosubLookupResults?.addEventListener("click", async (event) => {
     return;
   }
 
+  const listPush115 = event.target.closest(".list-item-actions .push-115-btn");
+  if (listPush115) {
+    event.stopPropagation();
+    await openP115MagnetModal({
+      magnet: listPush115.dataset.link || "",
+      code: listPush115.dataset.code || "",
+      button: listPush115,
+    });
+    return;
+  }
+
   const listPushBest = event.target.closest(".list-item-actions .push-best-btn");
   if (listPushBest?.dataset.code) {
     event.stopPropagation();
+    if (pushBackend === "p115") {
+      await openP115MagnetModal({
+        magnet: listPushBest.dataset.link || "",
+        code: listPushBest.dataset.code,
+        button: listPushBest,
+      });
+      return;
+    }
     const existing = listPushBest.dataset.link;
     await pushToOffline({
       magnets: existing ? [existing] : [],
@@ -726,7 +753,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
   }
 
   const listItem = event.target.closest(".fuzzy-item");
-  if (listItem?.dataset.code && !event.target.closest(".list-item-actions") && !event.target.closest(".card")) {
+  if (listItem?.dataset.code && !event.target.closest(".list-item-actions") && !event.target.closest(".card") && !event.target.closest(".fuzzy-cover")) {
     await showNosubLookupDetail(listItem.dataset.code);
     return;
   }
@@ -777,21 +804,27 @@ nosubLookupResults?.addEventListener("click", async (event) => {
 
   const copyBtn = event.target.closest(".copy-btn");
   if (copyBtn) {
-    try {
-      await navigator.clipboard.writeText(copyBtn.dataset.link);
-      const original = copyBtn.textContent;
-      copyBtn.textContent = "已复制";
-      setTimeout(() => {
-        copyBtn.textContent = original;
-      }, 1500);
-    } catch {
-      copyBtn.textContent = "失败";
-    }
+    await copyMagnetLink(copyBtn.dataset.link, copyBtn);
+    return;
+  }
+
+  const push115Btn = event.target.closest(".push-115-btn, .push-115-best-btn");
+  if (push115Btn) {
+    event.stopPropagation();
+    await openP115MagnetModal({
+      magnet: push115Btn.dataset.link || "",
+      code: push115Btn.dataset.code || "",
+      button: push115Btn,
+    });
     return;
   }
 
   const pushBtn = event.target.closest(".push-btn");
   if (pushBtn) {
+    if (pushBackend === "p115") {
+      await openP115MagnetModal({ magnet: pushBtn.dataset.link || "", button: pushBtn });
+      return;
+    }
     await pushToOffline({
       magnets: [pushBtn.dataset.link],
       button: pushBtn,
@@ -802,6 +835,14 @@ nosubLookupResults?.addEventListener("click", async (event) => {
 
   const pushBestBtn = event.target.closest(".push-best-btn");
   if (pushBestBtn?.dataset.code) {
+    if (pushBackend === "p115") {
+      await openP115MagnetModal({
+        magnet: pushBestBtn.dataset.link || "",
+        code: pushBestBtn.dataset.code,
+        button: pushBestBtn,
+      });
+      return;
+    }
     await pushToOffline({
       code: pushBestBtn.dataset.code,
       pushBest: true,

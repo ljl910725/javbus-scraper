@@ -155,6 +155,52 @@ class PushStatusResponse(BaseModel):
     push_folders: list[PushFolderInfo] = Field(default_factory=list)
     user_name: str = ""
     message: str = ""
+    p115_ready: bool = False
+    p115_user_name: str = ""
+    p115_folder_cid: str = ""
+    p115_folder_path: str = ""
+
+
+class P115FolderItem(BaseModel):
+    name: str
+    cid: str
+
+
+class P115FoldersResponse(BaseModel):
+    current_cid: str = "0"
+    current_path: str = "/"
+    parent_cid: str | None = None
+    folders: list[P115FolderItem] = Field(default_factory=list)
+    message: str = ""
+
+
+class P115MagnetParseRequest(BaseModel):
+    magnet: str
+
+
+class P115MagnetFile(BaseModel):
+    index: int
+    path: str
+    size: int = 0
+    wanted: bool = True
+
+
+class P115MagnetParseResponse(BaseModel):
+    magnet: str
+    info_hash: str = ""
+    name: str = ""
+    files: list[P115MagnetFile] = Field(default_factory=list)
+    parsed: bool = False
+    message: str = ""
+    folder_cid: str = ""
+    folder_path: str = ""
+
+
+class P115MagnetPushRequest(BaseModel):
+    magnet: str
+    info_hash: str = ""
+    wanted: list[int] = Field(default_factory=list)
+    code: str | None = None
 
 
 class RegisterRequest(BaseModel):
@@ -184,6 +230,8 @@ class UserSettingsRequest(BaseModel):
     cd2_offline_folder: str | None = None
     cd2_push_folders: list[dict] | None = None
     p115_cookie: str | None = None
+    p115_folder_cid: str | None = None
+    p115_folder_path: str | None = None
     proxy_enabled: bool | None = None
     http_proxy: str | None = None
     https_proxy: str | None = None

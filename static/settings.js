@@ -113,6 +113,8 @@ function buildSettingsPayload() {
     cd2_auth_mode: cd2AuthMode.value,
     cd2_username: document.getElementById("cd2Username").value,
     cd2_push_folders: pushFolders,
+    p115_folder_cid: document.getElementById("p115FolderCid")?.value.trim() || "",
+    p115_folder_path: document.getElementById("p115FolderPath")?.value.trim() || "",
     translate_engine: document.getElementById("translateEngine").value,
     translate_target_lang: document.getElementById("translateTargetLang").value,
     ai_translate_base_url: document.getElementById("aiBaseUrl").value,
@@ -149,6 +151,8 @@ function fillForm(settings) {
   }
   renderPushFolderList();
   document.getElementById("p115Cookie").value = settings.p115_cookie === "***" ? "" : settings.p115_cookie || "";
+  document.getElementById("p115FolderPath").value = settings.p115_folder_path || "";
+  document.getElementById("p115FolderCid").value = settings.p115_folder_cid || "";
   document.getElementById("translateEngine").value = settings.translate_engine || "free";
   document.getElementById("translateTargetLang").value = settings.translate_target_lang || "zh-CN";
   document.getElementById("aiBaseUrl").value = settings.ai_translate_base_url || "";
@@ -371,3 +375,96 @@ settingsForm.addEventListener("submit", async (event) => {
 
 loadSettings();
 initNav({ onLogout: () => loadSettings() });
+
+const browseP115FolderBtn = document.getElementById("browseP115FolderBtn");
+const p115FolderModal = document.getElementById("p115FolderModal");
+const p115FolderList = document.getElementById("p115FolderList");
+const p115FolderCurrentPath = document.getElementById("p115FolderCurrentPath");
+const p115FolderUpBtn = document.getElementById("p115FolderUpBtn");
+const p115FolderSelectCurrentBtn = document.getElementById("p115FolderSelectCurrentBtn");
+const p115FolderModalStatus = document.getElementById("p115FolderModalStatus");
+const closeP115FolderModalBtn = document.getElementById("closeP115FolderModalBtn");
+
+let p115BrowseCid = "0";
+let p115BrowseParent = null;
+let p115BrowsePath = "/";
+
+function setP115FolderModalStatus(message, isError = false) {
+  if (!p115FolderModalStatus) return;
+  p115FolderModalStatus.textContent = message || "";
+  p115FolderModalStatus.classList.toggle("errors", Boolean(isError));
+}
+
+function renderP115FolderList(data) {
+  p115BrowseCid = data.current_cid || "0";
+  p115BrowseParent = data.parent_cid ?? null;
+  p115BrowsePath = data.current_path || "/";
+  p115FolderCurrentPath.textContent = p115BrowsePath;
+  p115FolderUpBtn.disabled = p115BrowseParent === null;
+  const folders = data.folders || [];
+  if (!folders.length) {
+    p115FolderList.innerHTML = '<p class="folder-empty">当前目录没有子文件夹</p>';
+    return;
+  }
+  p115FolderList.innerHTML = folders
+    .map(
+      (folder) => `
+      <div class="folder-item">
+        <div class="folder-item-main"><strong>📁 ${escapeHtml(folder.name)}</strong></div>
+        <div class="folder-item-path">cid=${escapeHtml(folder.cid)}</div>
+        <div class="folder-item-actions">
+          <button class="ghost-btn p115-open-btn" type="button" data-cid="${escapeAttr(folder.cid)}">进入</button>
+          <button class="ghost-btn p115-select-btn" type="button" data-cid="${escapeAttr(folder.cid)}" data-name="${escapeAttr(folder.name)}">选为保存目录</button>
+        </div>
+      </div>`
+    )
+    .join("");
+}
+
+async function loadP115Folders(cid = "0") {
+  setP115FolderModalStatus("正在加载 115 目录...");
+  const res = await authFetch(`/api/p115/folders?cid=${encodeURIComponent(cid || "0")}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setP115FolderModalStatus(data.detail || "加载 115 目录失败，请先保存有效 Cookie", true);
+    p115FolderList.innerHTML = "";
+    return;
+  }
+  renderP115FolderList(data);
+  setP115FolderModalStatus("");
+}
+
+function selectP115Folder(cid, path) {
+  document.getElementById("p115FolderCid").value = cid || "0";
+  document.getElementById("p115FolderPath").value = path || "/";
+  setSettingsStatus(`已选择 115 目录: ${path || "/"}`);
+  p115FolderModal.classList.add("hidden");
+}
+
+browseP115FolderBtn?.addEventListener("click", () => {
+  p115FolderModal.classList.remove("hidden");
+  loadP115Folders(document.getElementById("p115FolderCid")?.value.trim() || "0");
+});
+closeP115FolderModalBtn?.addEventListener("click", () => p115FolderModal.classList.add("hidden"));
+p115FolderModal?.addEventListener("click", (event) => {
+  if (event.target === p115FolderModal) p115FolderModal.classList.add("hidden");
+});
+p115FolderUpBtn?.addEventListener("click", () => {
+  if (p115BrowseParent !== null) loadP115Folders(p115BrowseParent);
+});
+p115FolderSelectCurrentBtn?.addEventListener("click", () => {
+  selectP115Folder(p115BrowseCid, p115BrowsePath);
+});
+p115FolderList?.addEventListener("click", (event) => {
+  const openBtn = event.target.closest(".p115-open-btn");
+  if (openBtn) {
+    loadP115Folders(openBtn.dataset.cid || "0");
+    return;
+  }
+  const selectBtn = event.target.closest(".p115-select-btn");
+  if (selectBtn) {
+    const name = selectBtn.dataset.name || "";
+    const path = p115BrowsePath === "/" ? `/${name}` : `${p115BrowsePath.replace(/\/$/, "")}/${name}`;
+    selectP115Folder(selectBtn.dataset.cid || "0", path);
+  }
+});

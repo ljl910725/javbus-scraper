@@ -79,12 +79,47 @@ function initNav(options = {}) {
   });
 }
 
+async function copyTextToClipboard(text) {
+  const value = String(text ?? "");
+  if (!value) throw new Error("没有可复制的内容");
+
+  if (window.isSecureContext && navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(value);
+      return true;
+    } catch {
+      // HTTP / 权限被拒时走降级
+    }
+  }
+
+  const ta = document.createElement("textarea");
+  ta.value = value;
+  ta.setAttribute("readonly", "");
+  ta.setAttribute("aria-hidden", "true");
+  ta.style.cssText = "position:fixed;top:0;left:0;width:1px;height:1px;opacity:0;border:0;padding:0;margin:0;";
+  document.body.appendChild(ta);
+  ta.focus();
+  ta.select();
+  ta.setSelectionRange(0, ta.value.length);
+  let ok = false;
+  try {
+    ok = document.execCommand("copy");
+  } finally {
+    ta.remove();
+  }
+  if (ok) return true;
+
+  window.prompt("复制失败，请手动复制：", value);
+  throw new Error("复制失败，请手动复制");
+}
+
 async function copyCodeToClipboard(code, el) {
   const value = (code || "").trim();
   if (!value) return false;
   try {
-    await navigator.clipboard.writeText(value);
+    await copyTextToClipboard(value);
     if (el) {
+      el.classList.remove("is-copy-failed");
       el.classList.add("is-copied");
       window.clearTimeout(Number(el.dataset.copyTimer || 0));
       el.dataset.copyTimer = String(
@@ -93,6 +128,14 @@ async function copyCodeToClipboard(code, el) {
     }
     return true;
   } catch {
+    if (el) {
+      el.classList.remove("is-copied");
+      el.classList.add("is-copy-failed");
+      window.clearTimeout(Number(el.dataset.copyTimer || 0));
+      el.dataset.copyTimer = String(
+        window.setTimeout(() => el.classList.remove("is-copy-failed"), 1800)
+      );
+    }
     return false;
   }
 }

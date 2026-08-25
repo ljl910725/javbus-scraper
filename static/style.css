@@ -396,6 +396,22 @@ header h1 {
   overflow: hidden;
 }
 
+.fuzzy-cover .privacy-image {
+  min-height: 0;
+  height: 100%;
+  border-radius: 0;
+}
+
+.fuzzy-cover .privacy-placeholder {
+  font-size: 0.78rem;
+  line-height: 1.35;
+}
+
+.fuzzy-cover .privacy-hint {
+  font-size: 0.68rem;
+  padding: 0.25rem 0.4rem;
+}
+
 .fuzzy-badges {
   display: inline-flex;
   flex-wrap: wrap;
@@ -451,6 +467,15 @@ header h1 {
   content: " 已复制";
   margin-left: 0.2rem;
   color: var(--success);
+  font-weight: 600;
+  font-size: 0.75em;
+  text-decoration: none;
+}
+
+.copy-code.is-copy-failed::after {
+  content: " 复制失败";
+  margin-left: 0.2rem;
+  color: var(--danger);
   font-weight: 600;
   font-size: 0.75em;
   text-decoration: none;
@@ -1970,4 +1995,56 @@ button:disabled {
 .cleanup-file-list .dup-file-name small {
   color: var(--muted);
   font-size: 0.78rem;
+}
+
+.p115-magnet-modal-card {
+  width: min(720px, 96vw);
+  max-height: 92vh;
+  overflow: auto;
+}
+
+.p115-magnet-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.p115-magnet-files {
+  max-height: 50vh;
+  overflow: auto;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 0.4rem;
+}
+
+.p115-file-row {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 0.55rem;
+  align-items: center;
+  padding: 0.4rem 0.45rem;
+  border-radius: 8px;
+  font-weight: normal;
+}
+
+.p115-file-row:hover {
+  background: color-mix(in srgb, var(--bg) 70%, var(--accent) 8%);
+}
+
+.p115-file-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 0.86rem;
+}
+
+.p115-file-size {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.p115-magnet-actions {
+  margin-top: 0.85rem;
 }

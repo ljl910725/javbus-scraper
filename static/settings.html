@@ -95,6 +95,15 @@
         </div>
 
         <label>115 Cookie <textarea id="p115Cookie" rows="3" placeholder="UID=...; CID=...; SEID=..."></textarea></label>
+        <div class="push-folder-section">
+          <div class="push-folder-header">
+            <span>115 离线保存目录</span>
+            <button id="browseP115FolderBtn" class="ghost-btn" type="button">浏览</button>
+          </div>
+          <p class="field-hint">推送到 115 时使用这个目录。请先保存 Cookie，再点浏览选择。地址栏 cid= 后面的数字也可以手动填。</p>
+          <label>目录路径 <input id="p115FolderPath" placeholder="/电影" /></label>
+          <label>目录 CID <input id="p115FolderCid" placeholder="例如 123456789" /></label>
+        </div>
       </fieldset>
 
       <fieldset>
@@ -130,6 +139,23 @@
       <button type="submit">保存配置</button>
       <p id="settingsStatus" class="status hidden"></p>
     </form>
+  </div>
+
+  <div id="p115FolderModal" class="modal hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header">
+        <h2>选择 115 保存目录</h2>
+        <button id="closeP115FolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-modal-toolbar">
+        <button id="p115FolderUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="p115FolderCurrentPath" class="folder-current-path">/</span>
+        <button id="p115FolderSelectCurrentBtn" class="ghost-btn" type="button">使用当前目录</button>
+      </div>
+      <p class="field-hint">选择要把离线任务保存到哪个 115 目录</p>
+      <div id="p115FolderList" class="folder-list"></div>
+      <p id="p115FolderModalStatus" class="inline-status"></p>
+    </div>
   </div>
 
   <div id="folderModal" class="modal hidden">

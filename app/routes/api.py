@@ -14,6 +14,11 @@ from app.models import (
     FuzzySearchResponse,
     MovieInfo,
     P115StatusResponse,
+    P115FoldersResponse,
+    P115MagnetFile,
+    P115MagnetParseRequest,
+    P115MagnetParseResponse,
+    P115MagnetPushRequest,
     Push115ItemResult,
     Push115Request,
     Push115Response,
@@ -93,10 +98,18 @@ def _user_settings(user: dict | None) -> dict | None:
 
 
 def _folder_meta(user_cfg: dict | None, folder_id: str | None, backend: str) -> dict:
-    if backend != "cd2" or not user_cfg:
+    if not user_cfg:
+        return {"folder_id": folder_id or "", "folder_name": "", "folder_path": ""}
+    cfg = merge_settings(user_cfg)
+    if backend == "p115":
+        return {
+            "folder_id": cfg.get("p115_folder_cid") or folder_id or "",
+            "folder_name": (cfg.get("p115_folder_path") or "").rstrip("/").split("/")[-1] if cfg.get("p115_folder_path") else "",
+            "folder_path": cfg.get("p115_folder_path") or "",
+        }
+    if backend != "cd2":
         return {"folder_id": folder_id or "", "folder_name": "", "folder_path": ""}
     try:
-        cfg = merge_settings(user_cfg)
         _, folder = cd2.resolve_push_folder(cfg, folder_id)
         return {
             "folder_id": folder.get("id", folder_id or ""),
@@ -337,6 +350,110 @@ async def cd2_push(body: Push115Request, user: OptionalUser) -> Push115Response:
 @router.post("/p115/push", response_model=Push115Response)
 async def p115_push(body: Push115Request, user: OptionalUser) -> Push115Response:
     return await offline_push(body, user)
+
+
+@router.get("/p115/folders", response_model=P115FoldersResponse)
+async def p115_folders(user: CurrentUser, cid: str = Query("0")) -> P115FoldersResponse:
+    try:
+        data = await p115.list_folders(cid, _user_settings(user))
+        return P115FoldersResponse(**data)
+    except P115NotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except P115Error as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"读取 115 目录失败: {exc}") from exc
+
+
+@router.post("/p115/magnet/parse", response_model=P115MagnetParseResponse)
+async def p115_magnet_parse(body: P115MagnetParseRequest, user: CurrentUser) -> P115MagnetParseResponse:
+    try:
+        data = await p115.parse_magnet(body.magnet, _user_settings(user))
+        return P115MagnetParseResponse(
+            magnet=data["magnet"],
+            info_hash=data.get("info_hash") or "",
+            name=data.get("name") or "",
+            files=[P115MagnetFile(**item) for item in data.get("files") or []],
+            parsed=bool(data.get("parsed")),
+            message=data.get("message") or "",
+            folder_cid=data.get("folder_cid") or "",
+            folder_path=data.get("folder_path") or "",
+        )
+    except P115NotConfiguredError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except P115Error as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=f"解析磁力失败: {exc}") from exc
+
+
+@router.post("/p115/magnet/push", response_model=Push115Response)
+async def p115_magnet_push(body: P115MagnetPushRequest, user: CurrentUser) -> Push115Response:
+    user_cfg = _user_settings(user)
+    folder_meta = _folder_meta(user_cfg, None, "p115")
+    try:
+        result = await p115.push_magnet_files(
+            body.magnet,
+            info_hash=body.info_hash,
+            wanted=body.wanted,
+            user_settings=user_cfg,
+        )
+        _record_push_history(
+            user,
+            code=body.code or "",
+            magnet_link=body.magnet,
+            backend="p115",
+            success=result.success,
+            message=result.message,
+            **folder_meta,
+        )
+        return Push115Response(
+            success=result.success,
+            message=result.message,
+            backend="p115",
+            results=[
+                Push115ItemResult(
+                    link=result.link,
+                    success=result.success,
+                    message=result.message,
+                    task_name=result.task_name,
+                    backend="p115",
+                )
+            ],
+        )
+    except P115NotConfiguredError as exc:
+        _record_push_history(
+            user,
+            code=body.code or "",
+            magnet_link=body.magnet,
+            backend="p115",
+            success=False,
+            message=str(exc),
+            **folder_meta,
+        )
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except P115Error as exc:
+        _record_push_history(
+            user,
+            code=body.code or "",
+            magnet_link=body.magnet,
+            backend="p115",
+            success=False,
+            message=str(exc),
+            **folder_meta,
+        )
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    except Exception as exc:
+        _record_push_history(
+            user,
+            code=body.code or "",
+            magnet_link=body.magnet,
+            backend="p115",
+            success=False,
+            message=str(exc),
+            **folder_meta,
+        )
+        raise HTTPException(status_code=502, detail=f"推送 115 失败: {exc}") from exc
 
 
 @router.get("/search/fuzzy", response_model=FuzzySearchResponse)
