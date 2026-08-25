@@ -138,9 +138,12 @@ def _list_dir_names(dirpath: str, cache: dict[str, list[str]]) -> list[str]:
     return names
 
 
-def iter_scan_missing_subs(folders: list[str], *, stop=None):
+def iter_scan_missing_subs(folders: list[str], *, stop=None, limit: int = 10, offset: int = 0):
     if not folders:
         raise ValueError("请至少选择一个文件夹")
+
+    page_size = max(1, min(int(limit or 10), 100))
+    skip = max(0, int(offset or 0))
 
     selected: list[Path] = []
     seen: set[str] = set()
@@ -157,10 +160,13 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
     scanned = 0
     videos = 0
     dirs = 0
+    matched = 0
     truncated = False
+    has_more = False
     last_emit = 0.0
     current_dir = ""
     folder_index = 0
+    page_full = False
 
     def snapshot(*, phase: str, force: bool = False) -> dict | None:
         nonlocal last_emit
@@ -169,8 +175,8 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
             return None
         last_emit = now
         percent = None
-        if selected:
-            percent = min(99, int(((folder_index + (0 if phase == "scanning" else 1)) / len(selected)) * 100))
+        if page_size:
+            percent = min(99, int((len(items) / page_size) * 100))
         return {
             "type": "progress",
             "phase": phase,
@@ -180,7 +186,8 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
             "folder_index": folder_index,
             "folder_total": len(selected),
             "current_dir": current_dir,
-            "found": len(items),
+            "found": skip + len(items),
+            "page_found": len(items),
             "percent": percent,
             "truncated": truncated,
         }
@@ -194,7 +201,8 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
         "folder_index": 0,
         "folder_total": len(selected),
         "current_dir": str(selected[0]) if selected else "",
-        "found": 0,
+        "found": skip,
+        "page_found": 0,
         "percent": 0,
         "truncated": False,
     }
@@ -217,13 +225,13 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
             dirnames.sort()
             dirs += 1
             current_dir = dirpath
-            dir_cache[dirpath] = [name for name in filenames if not name.startswith(".")]
+            visible = [name for name in filenames if not name.startswith(".")]
+            visible.sort()
+            dir_cache[dirpath] = visible
             event = snapshot(phase="scanning")
             if event:
                 yield event
-            for name in filenames:
-                if name.startswith("."):
-                    continue
+            for name in visible:
                 scanned += 1
                 if scanned > _MAX_SCAN_FILES:
                     truncated = True
@@ -232,6 +240,9 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
                     continue
                 videos += 1
                 if has_c_subtitle(name):
+                    continue
+                matched += 1
+                if matched <= skip:
                     continue
                 names = _list_dir_names(dirpath, dir_cache)
                 stem = Path(name).stem
@@ -266,16 +277,19 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
                         "images": _pick_images(dirpath, names, stem),
                     }
                 )
-            if truncated:
+                if len(items) >= page_size:
+                    has_more = True
+                    page_full = True
+                    break
+            if truncated or page_full:
                 break
-        if truncated:
+        if truncated or page_full:
             break
 
     if stop is not None and stop.is_set():
         yield {"type": "cancelled"}
         return
 
-    items.sort(key=lambda item: ((item.get("code") or "ZZZ").upper(), item["name"].lower()))
     yield snapshot(phase="summarizing", force=True) or {
         "type": "progress",
         "phase": "summarizing",
@@ -285,7 +299,8 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
         "folder_index": max(folder_index, 0),
         "folder_total": len(selected),
         "current_dir": current_dir,
-        "found": len(items),
+        "found": skip + len(items),
+        "page_found": len(items),
         "percent": 99,
         "truncated": truncated,
     }
@@ -296,6 +311,9 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None):
             "scanned": scanned,
             "videos": videos,
             "found": len(items),
+            "offset": skip,
+            "limit": page_size,
+            "has_more": has_more or truncated,
             "truncated": truncated,
         },
     }

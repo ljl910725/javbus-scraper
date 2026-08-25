@@ -22,7 +22,10 @@ const nosubLookupHint = document.getElementById("nosubLookupHint");
 const nosubLookupStatusEl = document.getElementById("nosubLookupStatus");
 const nosubLookupResults = document.getElementById("nosubLookupResults");
 const closeNosubLookupModalBtn = document.getElementById("closeNosubLookupModalBtn");
+const nosubPageSizeSelect = document.getElementById("nosubPageSizeSelect");
+const nosubPagerEl = document.getElementById("nosubPager");
 
+const NOSUB_PAGE_SIZES = [10, 20, 50, 100];
 let nosubSelectedFolders = [];
 let nosubBrowsePath = "";
 let nosubBrowseParent = null;
@@ -30,6 +33,39 @@ let nosubScanData = null;
 let nosubAbort = null;
 let pendingNosubItem = null;
 let nosubLookupList = [];
+let nosubPage = 1;
+let nosubPageSize = 10;
+let nosubPageCache = new Map();
+let nosubHasMore = false;
+
+function currentNosubPageSize() {
+  const value = Number(nosubPageSizeSelect?.value);
+  return NOSUB_PAGE_SIZES.includes(value) ? value : 10;
+}
+
+function clearNosubPages() {
+  nosubPageCache = new Map();
+  nosubPage = 1;
+  nosubHasMore = false;
+  nosubScanData = null;
+}
+
+function renderNosubPager() {
+  if (!nosubPagerEl) return;
+  if (!nosubScanData) {
+    nosubPagerEl.classList.add("hidden");
+    nosubPagerEl.innerHTML = "";
+    return;
+  }
+  nosubPagerEl.classList.remove("hidden");
+  const prevDisabled = nosubPage <= 1 ? " disabled" : "";
+  const nextDisabled = nosubHasMore ? "" : " disabled";
+  nosubPagerEl.innerHTML = `
+    <button class="ghost-btn" type="button" id="nosubPrevPageBtn"${prevDisabled}>上一页</button>
+    <span class="list-page-info">第 ${nosubPage} 页 · 本页 ${nosubScanData.items?.length || 0} / ${nosubPageSize} 条</span>
+    <button class="ghost-btn" type="button" id="nosubNextPageBtn"${nextDisabled}>下一页</button>
+  `;
+}
 
 function setNosubStatus(message, isError = false, loading = false) {
   if (!nosubStatusEl) return;
@@ -203,17 +239,23 @@ function renderNosubResults(data) {
   if (!items.length) {
     nosubResultsEl.classList.remove("fuzzy-results");
     nosubResultsEl.innerHTML = '<p class="folder-empty">没有找到无字幕视频</p>';
+    renderNosubPager();
     return;
   }
   nosubResultsEl.classList.add("fuzzy-results");
   nosubResultsEl.innerHTML = items.map(renderNosubItem).join("");
+  renderNosubPager();
 }
 
 function setNosubScanRunning(running) {
   if (nosubScanBtn) nosubScanBtn.disabled = running;
   if (nosubAddFolderBtn) nosubAddFolderBtn.disabled = running;
   if (nosubClearFoldersBtn) nosubClearFoldersBtn.disabled = running;
+  if (nosubPageSizeSelect) nosubPageSizeSelect.disabled = running;
   nosubCancelBtn?.classList.toggle("hidden", !running);
+  nosubPagerEl?.querySelectorAll("button").forEach((btn) => {
+    btn.disabled = running;
+  });
 }
 
 function hideNosubProgress() {
@@ -237,16 +279,17 @@ function showNosubProgress(event) {
   }
   const folderLabel = folderTotal ? `文件夹 ${Math.min(folderIndex + 1, folderTotal)}/${folderTotal}` : "扫描中";
   const phaseLabel = event.phase === "summarizing" ? "正在汇总结果" : "正在扫描";
+  const pageFound = event.page_found ?? event.found ?? 0;
   if (nosubProgressText) {
     nosubProgressText.textContent =
-      `${phaseLabel} · ${folderLabel} · 已扫描 ${event.scanned || 0} 项 · 视频 ${event.videos || 0} 个 · 目录 ${event.dirs || 0} 个 · 无字幕 ${event.found || 0} 个`;
+      `${phaseLabel} · 第 ${nosubPage} 页 · ${folderLabel} · 已扫描 ${event.scanned || 0} 项 · 视频 ${event.videos || 0} 个 · 本页无字幕 ${pageFound}/${nosubPageSize}`;
   }
   if (nosubProgressPath) {
     nosubProgressPath.textContent = event.current_dir ? `当前：${event.current_dir}` : "";
   }
 }
 
-async function scanMissingSubs() {
+async function scanMissingSubs(page = 1, { reset = false } = {}) {
   if (!isLoggedIn()) {
     setNosubStatus("排查无字幕文件需要先登录", true);
     openAuthModal("login");
@@ -257,10 +300,31 @@ async function scanMissingSubs() {
     return;
   }
 
+  if (reset) {
+    clearNosubPages();
+    nosubResultsEl.innerHTML = "";
+    renderNosubPager();
+  }
+
+  nosubPageSize = currentNosubPageSize();
+  const targetPage = Math.max(1, Number(page) || 1);
+  if (!reset && nosubPageCache.has(targetPage)) {
+    const cached = nosubPageCache.get(targetPage);
+    nosubPage = targetPage;
+    nosubHasMore = Boolean(cached.has_more);
+    renderNosubResults(cached);
+    setNosubStatus(
+      `第 ${nosubPage} 页 · 本页 ${cached.items?.length || 0} 条无字幕文件${cached.has_more ? "，后面可能还有" : ""}`
+    );
+    return;
+  }
+
   nosubAbort?.abort();
   nosubAbort = new AbortController();
   setNosubScanRunning(true);
-  setNosubStatus("正在连接排查任务...", false, true);
+  nosubPage = targetPage;
+  const offset = (targetPage - 1) * nosubPageSize;
+  setNosubStatus(`正在扫描第 ${targetPage} 页...`, false, true);
   showNosubProgress({
     phase: "starting",
     scanned: 0,
@@ -269,14 +333,18 @@ async function scanMissingSubs() {
     folder_index: 0,
     folder_total: nosubSelectedFolders.length,
     current_dir: nosubSelectedFolders[0]?.path || "",
-    found: 0,
+    found: offset,
+    page_found: 0,
     percent: 0,
   });
-  nosubResultsEl.innerHTML = "";
   try {
     const res = await authFetch("/api/missing-subs/scan/stream", {
       method: "POST",
-      body: JSON.stringify({ folders: nosubSelectedFolders.map((item) => item.path) }),
+      body: JSON.stringify({
+        folders: nosubSelectedFolders.map((item) => item.path),
+        limit: nosubPageSize,
+        offset,
+      }),
       signal: nosubAbort.signal,
     });
     if (!res.ok) {
@@ -314,10 +382,19 @@ async function scanMissingSubs() {
       hideNosubProgress();
       return;
     }
+    if ((!finalResult.items || !finalResult.items.length) && targetPage > 1) {
+      nosubHasMore = false;
+      hideNosubProgress();
+      setNosubStatus("没有更多无字幕文件了");
+      renderNosubPager();
+      return;
+    }
+    nosubHasMore = Boolean(finalResult.has_more) && (finalResult.items || []).length >= nosubPageSize;
+    nosubPageCache.set(targetPage, { ...finalResult, has_more: nosubHasMore });
     const extra = finalResult.truncated ? "（扫描数量达到上限，结果可能不完整）" : "";
     hideNosubProgress();
     setNosubStatus(
-      `扫描 ${finalResult.scanned} 项，视频 ${finalResult.videos} 个，发现 ${finalResult.found} 个无字幕文件${extra}`
+      `第 ${targetPage} 页 · 扫描 ${finalResult.scanned} 项，视频 ${finalResult.videos} 个，本页 ${finalResult.found} 个无字幕文件${nosubHasMore ? "，可继续下一页" : ""}${extra}`
     );
     renderNosubResults(finalResult);
   } catch (err) {
@@ -334,20 +411,36 @@ async function scanMissingSubs() {
 }
 
 function findNosubItem(path) {
-  return (nosubScanData?.items || []).find((item) => item.path === path) || null;
+  if (nosubScanData?.items) {
+    const current = nosubScanData.items.find((item) => item.path === path);
+    if (current) return current;
+  }
+  for (const page of nosubPageCache.values()) {
+    const found = (page.items || []).find((item) => item.path === path);
+    if (found) return found;
+  }
+  return null;
 }
 
 function removeNosubItemFromView(path) {
   if (!nosubScanData) return;
   nosubScanData.items = (nosubScanData.items || []).filter((item) => item.path !== path);
   nosubScanData.found = nosubScanData.items.length;
+  const cached = nosubPageCache.get(nosubPage);
+  if (cached) {
+    cached.items = nosubScanData.items;
+    cached.found = nosubScanData.found;
+    nosubPageCache.set(nosubPage, cached);
+  }
   if (!nosubScanData.items.length) {
-    nosubResultsEl.innerHTML = '<p class="folder-empty">列表中已经没有无字幕文件</p>';
-    setNosubStatus("已处理完毕，当前没有剩余的无字幕文件");
+    nosubResultsEl.classList.remove("fuzzy-results");
+    nosubResultsEl.innerHTML = '<p class="folder-empty">这一页已经没有无字幕文件</p>';
+    renderNosubPager();
+    setNosubStatus("已处理完毕，可翻到下一页继续排查");
     return;
   }
   renderNosubResults(nosubScanData);
-  setNosubStatus(`剩余 ${nosubScanData.found} 个无字幕文件`);
+  setNosubStatus(`本页剩余 ${nosubScanData.found} 个无字幕文件`);
 }
 
 async function deleteNosubOriginal(item) {
@@ -469,10 +562,29 @@ function afterNosubPushSuccess() {
 nosubAddFolderBtn?.addEventListener("click", openNosubFolderModal);
 nosubClearFoldersBtn?.addEventListener("click", () => {
   nosubSelectedFolders = [];
+  clearNosubPages();
   renderNosubSelectedFolders();
+  nosubResultsEl.innerHTML = "";
+  renderNosubPager();
   setNosubStatus("");
 });
-nosubScanBtn?.addEventListener("click", scanMissingSubs);
+nosubScanBtn?.addEventListener("click", () => scanMissingSubs(1, { reset: true }));
+nosubPageSizeSelect?.addEventListener("change", () => {
+  nosubPageSize = currentNosubPageSize();
+  if (!nosubSelectedFolders.length) return;
+  if (nosubScanData || nosubPageCache.size) {
+    scanMissingSubs(1, { reset: true });
+  }
+});
+nosubPagerEl?.addEventListener("click", (event) => {
+  if (event.target.id === "nosubPrevPageBtn" && nosubPage > 1) {
+    scanMissingSubs(nosubPage - 1);
+    return;
+  }
+  if (event.target.id === "nosubNextPageBtn" && nosubHasMore) {
+    scanMissingSubs(nosubPage + 1);
+  }
+});
 nosubCancelBtn?.addEventListener("click", () => {
   nosubAbort?.abort();
 });

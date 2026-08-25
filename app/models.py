@@ -336,6 +336,8 @@ class DuplicateDeleteResponse(BaseModel):
 
 class MissingSubScanRequest(BaseModel):
     folders: list[str] = Field(default_factory=list)
+    limit: int = Field(default=10, ge=1, le=100)
+    offset: int = Field(default=0, ge=0)
 
 
 class MissingSubItem(BaseModel):
@@ -360,4 +362,7 @@ class MissingSubScanResponse(BaseModel):
     scanned: int = 0
     videos: int = 0
     found: int = 0
+    offset: int = 0
+    limit: int = 10
+    has_more: bool = False
     truncated: bool = False

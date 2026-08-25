@@ -25,7 +25,12 @@ async def scan_missing_subs_stream(body: MissingSubScanRequest, request: Request
 
     def worker() -> None:
         try:
-            for event in iter_scan_missing_subs(body.folders, stop=stop):
+            for event in iter_scan_missing_subs(
+                body.folders,
+                stop=stop,
+                limit=body.limit,
+                offset=body.offset,
+            ):
                 loop.call_soon_threadsafe(queue.put_nowait, event)
         except ValueError as exc:
             loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})

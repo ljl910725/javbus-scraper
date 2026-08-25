@@ -16,12 +16,41 @@ const dupFolderUpBtn = document.getElementById("dupFolderUpBtn");
 const dupFolderAddCurrentBtn = document.getElementById("dupFolderAddCurrentBtn");
 const dupFolderModalStatus = document.getElementById("dupFolderModalStatus");
 const closeDupFolderModalBtn = document.getElementById("closeDupFolderModalBtn");
+const dupPageSizeSelect = document.getElementById("dupPageSizeSelect");
+const dupPagerEl = document.getElementById("dupPager");
 
+const DUP_PAGE_SIZES = [10, 20, 50, 100];
 let dupSelectedFolders = [];
 let dupBrowsePath = "";
 let dupBrowseParent = null;
 let dupScanData = null;
 let dupAbort = null;
+let dupPage = 1;
+let dupPageSize = 10;
+
+function currentDupPageSize() {
+  const value = Number(dupPageSizeSelect?.value);
+  return DUP_PAGE_SIZES.includes(value) ? value : 10;
+}
+
+function renderDupPager(totalGroups) {
+  if (!dupPagerEl) return;
+  if (!totalGroups) {
+    dupPagerEl.classList.add("hidden");
+    dupPagerEl.innerHTML = "";
+    return;
+  }
+  const totalPages = Math.max(1, Math.ceil(totalGroups / dupPageSize));
+  if (dupPage > totalPages) dupPage = totalPages;
+  dupPagerEl.classList.remove("hidden");
+  const prevDisabled = dupPage <= 1 ? " disabled" : "";
+  const nextDisabled = dupPage >= totalPages ? " disabled" : "";
+  dupPagerEl.innerHTML = `
+    <button class="ghost-btn" type="button" id="dupPrevPageBtn"${prevDisabled}>上一页</button>
+    <span class="list-page-info">第 ${dupPage} / ${totalPages} 页 · 共 ${totalGroups} 组</span>
+    <button class="ghost-btn" type="button" id="dupNextPageBtn"${nextDisabled}>下一页</button>
+  `;
+}
 
 function setDupStatus(message, isError = false, loading = false) {
   if (!dupStatusEl) return;
@@ -149,10 +178,18 @@ function renderDupResults(data) {
   const groups = data?.groups || [];
   if (!groups.length) {
     dupResultsEl.innerHTML = '<p class="folder-empty">没有找到番号相同的视频文件</p>';
+    renderDupPager(0);
     return;
   }
 
-  dupResultsEl.innerHTML = groups
+  dupPageSize = currentDupPageSize();
+  const totalPages = Math.max(1, Math.ceil(groups.length / dupPageSize));
+  if (dupPage > totalPages) dupPage = totalPages;
+  const start = (dupPage - 1) * dupPageSize;
+  const pageGroups = groups.slice(start, start + dupPageSize);
+  renderDupPager(groups.length);
+
+  dupResultsEl.innerHTML = pageGroups
     .map(
       (group) => `
       <section class="dup-group" data-code="${escapeAttr(group.code)}" data-part="${escapeAttr(group.part || "")}">
@@ -182,6 +219,7 @@ function setDupScanRunning(running) {
   if (dupScanBtn) dupScanBtn.disabled = running;
   if (dupAddFolderBtn) dupAddFolderBtn.disabled = running;
   if (dupClearFoldersBtn) dupClearFoldersBtn.disabled = running;
+  if (dupPageSizeSelect) dupPageSizeSelect.disabled = running;
   dupCancelBtn?.classList.toggle("hidden", !running);
 }
 
@@ -282,7 +320,9 @@ async function scanDuplicates() {
     duplicate_codes: 0,
     percent: 0,
   });
+  dupPage = 1;
   dupResultsEl.innerHTML = "";
+  renderDupPager(0);
   try {
     const res = await authFetch("/api/duplicates/scan/stream", {
       method: "POST",
@@ -400,6 +440,24 @@ dupClearFoldersBtn?.addEventListener("click", () => {
 dupScanBtn?.addEventListener("click", scanDuplicates);
 dupCancelBtn?.addEventListener("click", () => {
   dupAbort?.abort();
+});
+dupPageSizeSelect?.addEventListener("change", () => {
+  dupPageSize = currentDupPageSize();
+  dupPage = 1;
+  if (dupScanData) renderDupResults(dupScanData);
+});
+dupPagerEl?.addEventListener("click", (event) => {
+  const groups = dupScanData?.groups || [];
+  const totalPages = Math.max(1, Math.ceil(groups.length / currentDupPageSize()));
+  if (event.target.id === "dupPrevPageBtn" && dupPage > 1) {
+    dupPage -= 1;
+    renderDupResults(dupScanData);
+    return;
+  }
+  if (event.target.id === "dupNextPageBtn" && dupPage < totalPages) {
+    dupPage += 1;
+    renderDupResults(dupScanData);
+  }
 });
 closeDupFolderModalBtn?.addEventListener("click", closeDupFolderModal);
 dupFolderUpBtn?.addEventListener("click", () => {

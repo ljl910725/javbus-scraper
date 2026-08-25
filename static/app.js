@@ -1985,13 +1985,57 @@ fuzzyQueryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter") search();
 });
 
+const HOME_TAB_KEY = "javbus_home_tab";
+const HOME_TABS = ["search", "nosub", "dup"];
+
+function setHomeTab(tab, { persist = true } = {}) {
+  const next = HOME_TABS.includes(tab) ? tab : "search";
+  document.querySelectorAll(".app-tab").forEach((btn) => {
+    const active = btn.dataset.tab === next;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-selected", active ? "true" : "false");
+  });
+  document.querySelectorAll("[data-tab-panel]").forEach((panel) => {
+    panel.classList.toggle("hidden", panel.dataset.tabPanel !== next);
+  });
+  if (persist) {
+    try {
+      sessionStorage.setItem(HOME_TAB_KEY, next);
+    } catch {
+      // ignore
+    }
+    const url = new URL(window.location.href);
+    if (next === "search") url.hash = "";
+    else url.hash = next;
+    history.replaceState(null, "", url.pathname + url.search + url.hash);
+  }
+}
+
+document.querySelector(".app-tabs")?.addEventListener("click", (event) => {
+  const btn = event.target.closest(".app-tab");
+  if (!btn?.dataset.tab) return;
+  setHomeTab(btn.dataset.tab);
+});
+
 const bootParams = new URLSearchParams(window.location.search);
 const bootDetailCode = (bootParams.get("code") || "").trim();
+const bootHashTab = (window.location.hash || "").replace(/^#/, "");
+const storedTab = (() => {
+  try {
+    return sessionStorage.getItem(HOME_TAB_KEY);
+  } catch {
+    return "";
+  }
+})();
 if (bootDetailCode && bootParams.get("view") === "detail") {
+  setHomeTab("search", { persist: false });
   setSearchMode("exact");
   handleDetailDeepLink();
 } else if (!restoreSearchState()) {
   setSearchMode("exact");
+  setHomeTab(HOME_TABS.includes(bootHashTab) ? bootHashTab : storedTab || "search", { persist: true });
+} else {
+  setHomeTab(HOME_TABS.includes(bootHashTab) ? bootHashTab : storedTab || "search", { persist: true });
 }
 
 closePushFolderModalBtn.addEventListener("click", closePushFolderModal);

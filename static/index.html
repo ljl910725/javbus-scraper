@@ -11,7 +11,7 @@
     <header class="top-header">
       <div>
         <h1>JavBus 番号爬虫</h1>
-        <p class="subtitle">精确查询番号，或模糊搜索影片</p>
+        <p class="subtitle">搜索番号、排查无字幕、筛选相同文件</p>
       </div>
       <div class="header-actions">
         <div id="userMenu" class="user-menu hidden">
@@ -31,6 +31,15 @@
       </div>
     </header>
 
+    <nav class="app-tabs" role="tablist" aria-label="功能页签">
+      <button id="tabBtnSearch" class="app-tab active" type="button" data-tab="search" role="tab" aria-selected="true">搜索番号</button>
+      <button id="tabBtnNosub" class="app-tab" type="button" data-tab="nosub" role="tab" aria-selected="false">排查无字幕</button>
+      <button id="tabBtnDup" class="app-tab" type="button" data-tab="dup" role="tab" aria-selected="false">筛选相同文件</button>
+    </nav>
+
+    <section id="configInfo" class="config-info hidden"></section>
+
+    <div id="tabSearch" class="tab-panel" data-tab-panel="search">
     <section class="search-panel">
       <div class="search-mode-tabs">
         <button id="exactModeBtn" class="mode-tab active" type="button" data-mode="exact">精确查询</button>
@@ -59,38 +68,27 @@
       <div id="status" class="status hidden"></div>
     </section>
 
-    <section id="configInfo" class="config-info hidden"></section>
     <section id="errors" class="errors hidden"></section>
     <section id="results" class="results"></section>
+    </div>
 
+    <div id="tabNosub" class="tab-panel hidden" data-tab-panel="nosub">
     <section class="dup-panel">
-      <h2>筛选相同文件</h2>
-      <p class="field-hint">选择一个或多个文件夹，找出番号相同的视频。匹配时忽略大小写、-C / -U / -ch 等后缀和视频格式；-cd1 与 -cd2 不算同名。列表仍显示完整文件名。</p>
-      <div id="dupSelectedFolders" class="dup-chips"></div>
-      <div class="options">
-        <button id="dupAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
-        <button id="dupClearFoldersBtn" class="ghost-btn" type="button">清空已选</button>
-        <button id="dupScanBtn" type="button">开始筛选</button>
-        <button id="dupCancelBtn" class="ghost-btn hidden" type="button">取消扫描</button>
-      </div>
-      <div id="dupProgress" class="dup-progress hidden">
-        <div class="dup-progress-track">
-          <div id="dupProgressFill" class="dup-progress-fill"></div>
-        </div>
-        <div id="dupProgressText" class="dup-progress-text"></div>
-        <div id="dupProgressPath" class="dup-progress-path"></div>
-      </div>
-      <div id="dupStatus" class="status hidden"></div>
-      <div id="dupResults" class="dup-results"></div>
-    </section>
-
-    <section class="dup-panel">
-      <h2>排查无字幕文件</h2>
-      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。-cd1 / -cd2 不会被当成有字幕；大小写不敏感。可查看目录图片、NFO 信息，并一键到 JavBus 搜索番号。</p>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。</p>
       <div id="nosubSelectedFolders" class="dup-chips"></div>
       <div class="options">
         <button id="nosubAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
         <button id="nosubClearFoldersBtn" class="ghost-btn" type="button">清空已选</button>
+        <label class="fuzzy-control list-page-size">
+          <span>每页</span>
+          <select id="nosubPageSizeSelect">
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <span>条</span>
+        </label>
         <button id="nosubScanBtn" type="button">开始排查</button>
         <button id="nosubCancelBtn" class="ghost-btn hidden" type="button">取消扫描</button>
       </div>
@@ -102,8 +100,43 @@
         <div id="nosubProgressPath" class="dup-progress-path"></div>
       </div>
       <div id="nosubStatus" class="status hidden"></div>
+      <div id="nosubPager" class="list-pagination hidden"></div>
       <div id="nosubResults" class="nosub-results"></div>
     </section>
+    </div>
+
+    <div id="tabDup" class="tab-panel hidden" data-tab-panel="dup">
+    <section class="dup-panel">
+      <p class="field-hint">选择一个或多个文件夹，找出番号相同的视频。匹配时忽略大小写、-C / -U / -ch 等后缀和视频格式；-cd1 与 -cd2 不算同名。列表仍显示完整文件名。</p>
+      <div id="dupSelectedFolders" class="dup-chips"></div>
+      <div class="options">
+        <button id="dupAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
+        <button id="dupClearFoldersBtn" class="ghost-btn" type="button">清空已选</button>
+        <label class="fuzzy-control list-page-size">
+          <span>每页</span>
+          <select id="dupPageSizeSelect">
+            <option value="10" selected>10</option>
+            <option value="20">20</option>
+            <option value="50">50</option>
+            <option value="100">100</option>
+          </select>
+          <span>组</span>
+        </label>
+        <button id="dupScanBtn" type="button">开始筛选</button>
+        <button id="dupCancelBtn" class="ghost-btn hidden" type="button">取消扫描</button>
+      </div>
+      <div id="dupProgress" class="dup-progress hidden">
+        <div class="dup-progress-track">
+          <div id="dupProgressFill" class="dup-progress-fill"></div>
+        </div>
+        <div id="dupProgressText" class="dup-progress-text"></div>
+        <div id="dupProgressPath" class="dup-progress-path"></div>
+      </div>
+      <div id="dupStatus" class="status hidden"></div>
+      <div id="dupPager" class="list-pagination hidden"></div>
+      <div id="dupResults" class="dup-results"></div>
+    </section>
+    </div>
   </div>
 
   <div id="authModal" class="modal hidden">
