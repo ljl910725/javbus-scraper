@@ -1,9 +1,14 @@
 const dupAddFolderBtn = document.getElementById("dupAddFolderBtn");
 const dupClearFoldersBtn = document.getElementById("dupClearFoldersBtn");
 const dupScanBtn = document.getElementById("dupScanBtn");
+const dupCancelBtn = document.getElementById("dupCancelBtn");
 const dupSelectedFoldersEl = document.getElementById("dupSelectedFolders");
 const dupStatusEl = document.getElementById("dupStatus");
 const dupResultsEl = document.getElementById("dupResults");
+const dupProgressEl = document.getElementById("dupProgress");
+const dupProgressFill = document.getElementById("dupProgressFill");
+const dupProgressText = document.getElementById("dupProgressText");
+const dupProgressPath = document.getElementById("dupProgressPath");
 const dupFolderModal = document.getElementById("dupFolderModal");
 const dupFolderList = document.getElementById("dupFolderList");
 const dupFolderCurrentPath = document.getElementById("dupFolderCurrentPath");
@@ -16,6 +21,7 @@ let dupSelectedFolders = [];
 let dupBrowsePath = "";
 let dupBrowseParent = null;
 let dupScanData = null;
+let dupAbort = null;
 
 function setDupStatus(message, isError = false, loading = false) {
   if (!dupStatusEl) return;
@@ -172,6 +178,84 @@ function renderDupResults(data) {
     .join("");
 }
 
+function setDupScanRunning(running) {
+  if (dupScanBtn) dupScanBtn.disabled = running;
+  if (dupAddFolderBtn) dupAddFolderBtn.disabled = running;
+  if (dupClearFoldersBtn) dupClearFoldersBtn.disabled = running;
+  dupCancelBtn?.classList.toggle("hidden", !running);
+}
+
+function hideDupProgress() {
+  dupProgressEl?.classList.add("hidden");
+  dupProgressFill?.classList.remove("is-indeterminate");
+  if (dupProgressFill) dupProgressFill.style.width = "0%";
+}
+
+function showDupProgress(event) {
+  if (!dupProgressEl) return;
+  dupProgressEl.classList.remove("hidden");
+  const folderTotal = Number(event.folder_total) || 0;
+  const folderIndex = Number(event.folder_index) || 0;
+  const percent = Number(event.percent);
+  if (Number.isFinite(percent) && folderTotal > 1) {
+    dupProgressFill?.classList.remove("is-indeterminate");
+    if (dupProgressFill) dupProgressFill.style.width = `${Math.max(4, Math.min(100, percent))}%`;
+  } else {
+    dupProgressFill?.classList.add("is-indeterminate");
+    if (dupProgressFill) dupProgressFill.style.width = "";
+  }
+  const folderLabel = folderTotal ? `文件夹 ${Math.min(folderIndex + 1, folderTotal)}/${folderTotal}` : "扫描中";
+  const phaseLabel = event.phase === "summarizing" ? "正在汇总重复项" : "正在扫描";
+  if (dupProgressText) {
+    dupProgressText.textContent =
+      `${phaseLabel} · ${folderLabel} · 已扫描 ${event.scanned || 0} 项 · 视频 ${event.videos || 0} 个 · 目录 ${event.dirs || 0} 个 · 已发现 ${event.duplicate_codes || 0} 组相同番号`;
+  }
+  if (dupProgressPath) {
+    dupProgressPath.textContent = event.current_dir ? `当前：${event.current_dir}` : "";
+  }
+}
+
+async function readSseJson(response, onEvent) {
+  if (!response.body) {
+    throw new Error("浏览器不支持流式进度");
+  }
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let finished = false;
+
+  const consume = (chunk) => {
+    const dataLine = chunk
+      .split("\n")
+      .map((line) => line.trimEnd())
+      .find((line) => line.startsWith("data:"));
+    if (!dataLine) return;
+    const payload = dataLine.slice(dataLine.indexOf(":") + 1).trim();
+    if (!payload) return;
+    const event = JSON.parse(payload);
+    onEvent(event);
+    if (["done", "error", "cancelled"].includes(event.type)) {
+      finished = true;
+    }
+  };
+
+  while (!finished) {
+    const { done, value } = await reader.read();
+    if (done) {
+      buffer += decoder.decode();
+      if (buffer.trim()) consume(buffer);
+      break;
+    }
+    buffer += decoder.decode(value, { stream: true });
+    const chunks = buffer.split("\n\n");
+    buffer = chunks.pop() || "";
+    for (const chunk of chunks) {
+      consume(chunk);
+      if (finished) break;
+    }
+  }
+}
+
 async function scanDuplicates() {
   if (!isLoggedIn()) {
     setDupStatus("筛选相同文件需要先登录", true);
@@ -183,28 +267,79 @@ async function scanDuplicates() {
     return;
   }
 
-  dupScanBtn.disabled = true;
-  setDupStatus("正在扫描视频文件...", false, true);
+  dupAbort?.abort();
+  dupAbort = new AbortController();
+  setDupScanRunning(true);
+  setDupStatus("正在连接扫描任务...", false, true);
+  showDupProgress({
+    phase: "starting",
+    scanned: 0,
+    videos: 0,
+    dirs: 0,
+    folder_index: 0,
+    folder_total: dupSelectedFolders.length,
+    current_dir: dupSelectedFolders[0]?.path || "",
+    duplicate_codes: 0,
+    percent: 0,
+  });
   dupResultsEl.innerHTML = "";
   try {
-    const res = await authFetch("/api/duplicates/scan", {
+    const res = await authFetch("/api/duplicates/scan/stream", {
       method: "POST",
       body: JSON.stringify({ folders: dupSelectedFolders.map((item) => item.path) }),
+      signal: dupAbort.signal,
     });
-    const data = await res.json().catch(() => ({}));
     if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
       setDupStatus(data.detail || "筛选失败", true);
+      hideDupProgress();
       return;
     }
-    const extra = data.truncated ? "（扫描数量达到上限，结果可能不完整）" : "";
+
+    let finalResult = null;
+    let endedType = "";
+    await readSseJson(res, (event) => {
+      endedType = event.type;
+      if (event.type === "progress") {
+        showDupProgress(event);
+        setDupStatus("扫描进行中，请稍候...", false, true);
+        return;
+      }
+      if (event.type === "done") {
+        finalResult = event.result;
+        return;
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "筛选失败");
+      }
+    });
+
+    if (endedType === "cancelled") {
+      setDupStatus("已取消扫描");
+      hideDupProgress();
+      return;
+    }
+    if (!finalResult) {
+      setDupStatus("扫描中断，未返回结果", true);
+      hideDupProgress();
+      return;
+    }
+    const extra = finalResult.truncated ? "（扫描数量达到上限，结果可能不完整）" : "";
+    hideDupProgress();
     setDupStatus(
-      `扫描 ${data.scanned} 项，视频 ${data.videos} 个，发现 ${data.duplicate_codes} 组相同番号、共 ${data.duplicate_files} 个文件${extra}`
+      `扫描 ${finalResult.scanned} 项，视频 ${finalResult.videos} 个，发现 ${finalResult.duplicate_codes} 组相同番号、共 ${finalResult.duplicate_files} 个文件${extra}`
     );
-    renderDupResults(data);
+    renderDupResults(finalResult);
   } catch (err) {
-    setDupStatus(err.message || "筛选失败", true);
+    if (err.name === "AbortError") {
+      setDupStatus("已取消扫描");
+    } else {
+      setDupStatus(err.message || "筛选失败", true);
+    }
+    hideDupProgress();
   } finally {
-    dupScanBtn.disabled = false;
+    setDupScanRunning(false);
+    dupAbort = null;
   }
 }
 
@@ -263,6 +398,9 @@ dupClearFoldersBtn?.addEventListener("click", () => {
   setDupStatus("");
 });
 dupScanBtn?.addEventListener("click", scanDuplicates);
+dupCancelBtn?.addEventListener("click", () => {
+  dupAbort?.abort();
+});
 closeDupFolderModalBtn?.addEventListener("click", closeDupFolderModal);
 dupFolderUpBtn?.addEventListener("click", () => {
   if (dupBrowseParent === null) return;

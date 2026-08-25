@@ -1673,6 +1673,51 @@ button:disabled {
   color: var(--danger);
 }
 
+.dup-progress {
+  margin-top: 0.85rem;
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.dup-progress-track {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--surface);
+}
+
+.dup-progress-fill {
+  height: 100%;
+  width: 12%;
+  border-radius: 999px;
+  background: var(--accent);
+  transition: width 0.25s ease;
+}
+
+.dup-progress-fill.is-indeterminate {
+  width: 32%;
+  animation: dup-progress-slide 1.2s ease-in-out infinite;
+}
+
+@keyframes dup-progress-slide {
+  0% { transform: translateX(-120%); }
+  100% { transform: translateX(360%); }
+}
+
+.dup-progress-text {
+  margin-top: 0.55rem;
+  font-size: 0.88rem;
+}
+
+.dup-progress-path {
+  margin-top: 0.25rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
 .dup-results {
   margin-top: 1rem;
   display: flex;

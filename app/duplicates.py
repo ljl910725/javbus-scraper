@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import time
 from collections import defaultdict
 from pathlib import Path
 
@@ -66,7 +67,8 @@ def extract_jav_code(filename: str) -> str | None:
     return _normalize_code(match.group(1))
 
 
-def _file_payload(path: Path, code: str) -> dict:
+def _file_payload(dirpath: str, name: str, code: str) -> dict:
+    path = Path(dirpath) / name
     try:
         stat = path.stat()
         size = str(stat.st_size)
@@ -76,15 +78,38 @@ def _file_payload(path: Path, code: str) -> dict:
         mtime = "0"
     return {
         "code": code,
-        "name": path.name,
+        "name": name,
         "path": str(path),
-        "parent_dir": str(path.parent),
+        "parent_dir": dirpath,
         "size": size,
         "mtime": mtime,
     }
 
 
-def scan_duplicate_videos(folders: list[str]) -> dict:
+def _build_groups(grouped: dict[str, list[tuple[str, str]]]) -> list[dict]:
+    groups = []
+    for code, items in grouped.items():
+        if len(items) < 2:
+            continue
+        files = [_file_payload(dirpath, name, code) for dirpath, name in items]
+        files.sort(key=lambda item: (item["parent_dir"], item["name"]))
+        groups.append({"code": code, "count": len(files), "files": files})
+    groups.sort(key=lambda item: (-item["count"], item["code"]))
+    return groups
+
+
+def _duplicate_stats(grouped: dict[str, list[tuple[str, str]]]) -> tuple[int, int]:
+    codes = 0
+    files = 0
+    for items in grouped.values():
+        if len(items) < 2:
+            continue
+        codes += 1
+        files += len(items)
+    return codes, files
+
+
+def iter_scan_duplicate_videos(folders: list[str], *, stop=None):
     from app.subtitles.storage import resolve_directory
 
     if not folders:
@@ -100,15 +125,76 @@ def scan_duplicate_videos(folders: list[str]) -> dict:
         seen.add(key)
         selected.append(resolved)
 
-    grouped: dict[str, list[dict]] = defaultdict(list)
+    grouped: dict[str, list[tuple[str, str]]] = defaultdict(list)
     scanned = 0
     videos = 0
+    dirs = 0
     truncated = False
+    last_emit = 0.0
+    current_dir = ""
+    folder_index = 0
 
-    for root in selected:
-        for dirpath, dirnames, filenames in os.walk(root, topdown=True, followlinks=False):
+    def snapshot(*, phase: str, force: bool = False) -> dict | None:
+        nonlocal last_emit
+        now = time.monotonic()
+        if not force and now - last_emit < 0.3:
+            return None
+        last_emit = now
+        dup_codes, dup_files = _duplicate_stats(grouped)
+        percent = None
+        if selected:
+            percent = min(99, int(((folder_index + (0 if phase == "scanning" else 1)) / len(selected)) * 100))
+        return {
+            "type": "progress",
+            "phase": phase,
+            "scanned": scanned,
+            "videos": videos,
+            "dirs": dirs,
+            "folder_index": folder_index,
+            "folder_total": len(selected),
+            "current_dir": current_dir,
+            "duplicate_codes": dup_codes,
+            "duplicate_files": dup_files,
+            "percent": percent,
+            "truncated": truncated,
+        }
+
+    yield {
+        "type": "progress",
+        "phase": "starting",
+        "scanned": 0,
+        "videos": 0,
+        "dirs": 0,
+        "folder_index": 0,
+        "folder_total": len(selected),
+        "current_dir": str(selected[0]) if selected else "",
+        "duplicate_codes": 0,
+        "duplicate_files": 0,
+        "percent": 0,
+        "truncated": False,
+    }
+
+    for folder_index, root in enumerate(selected):
+        if stop is not None and stop.is_set():
+            yield {"type": "cancelled"}
+            return
+        current_dir = str(root)
+        event = snapshot(phase="scanning", force=True)
+        if event:
+            yield event
+        for dirpath, dirnames, filenames in os.walk(
+            root, topdown=True, followlinks=False, onerror=lambda _exc: None
+        ):
+            if stop is not None and stop.is_set():
+                yield {"type": "cancelled"}
+                return
             dirnames[:] = [name for name in dirnames if not name.startswith(".")]
             dirnames.sort()
+            dirs += 1
+            current_dir = dirpath
+            event = snapshot(phase="scanning")
+            if event:
+                yield event
             for name in filenames:
                 if name.startswith("."):
                     continue
@@ -123,28 +209,52 @@ def scan_duplicate_videos(folders: list[str]) -> dict:
                 code = extract_jav_code(name)
                 if not code:
                     continue
-                grouped[code].append(_file_payload(Path(dirpath) / name, code))
+                grouped[code].append((dirpath, name))
             if truncated:
                 break
         if truncated:
             break
 
-    groups = []
-    for code, files in grouped.items():
-        if len(files) < 2:
-            continue
-        files.sort(key=lambda item: (item["parent_dir"], item["name"]))
-        groups.append({"code": code, "count": len(files), "files": files})
-    groups.sort(key=lambda item: (-item["count"], item["code"]))
+    if stop is not None and stop.is_set():
+        yield {"type": "cancelled"}
+        return
 
-    return {
-        "groups": groups,
+    yield snapshot(phase="summarizing", force=True) or {
+        "type": "progress",
+        "phase": "summarizing",
         "scanned": scanned,
         "videos": videos,
-        "duplicate_codes": len(groups),
-        "duplicate_files": sum(item["count"] for item in groups),
+        "dirs": dirs,
+        "folder_index": max(folder_index, 0),
+        "folder_total": len(selected),
+        "current_dir": current_dir,
+        "duplicate_codes": _duplicate_stats(grouped)[0],
+        "duplicate_files": _duplicate_stats(grouped)[1],
+        "percent": 99,
         "truncated": truncated,
     }
+    groups = _build_groups(grouped)
+    yield {
+        "type": "done",
+        "result": {
+            "groups": groups,
+            "scanned": scanned,
+            "videos": videos,
+            "duplicate_codes": len(groups),
+            "duplicate_files": sum(item["count"] for item in groups),
+            "truncated": truncated,
+        },
+    }
+
+
+def scan_duplicate_videos(folders: list[str]) -> dict:
+    result = None
+    for event in iter_scan_duplicate_videos(folders):
+        if event.get("type") == "done":
+            result = event["result"]
+    if result is None:
+        raise ValueError("扫描未完成")
+    return result
 
 
 def delete_video_file(path: str) -> dict:
