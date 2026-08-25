@@ -338,7 +338,8 @@ header h1 {
   margin-top: 0.45rem;
 }
 
-.list-item-actions .ghost-btn {
+.list-item-actions .ghost-btn,
+.list-item-actions .danger-btn {
   font-size: 0.72rem;
   padding: 0.2rem 0.45rem;
 }
