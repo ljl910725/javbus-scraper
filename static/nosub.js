@@ -228,6 +228,7 @@ function renderNosubItem(item) {
         <div class="nosub-filename" title="${escapeAttr(item.path)}">${escapeHtml(item.name)}</div>
         <div class="list-item-actions">
           <button class="nosub-lookup-btn ghost-btn" type="button" data-path="${escapeAttr(item.path)}">查找</button>
+          <button class="danger-btn nosub-delete-btn" type="button" data-path="${escapeAttr(item.path)}" data-name="${escapeAttr(item.name)}">删除</button>
         </div>
       </div>
     </article>`;
@@ -443,6 +444,34 @@ function removeNosubItemFromView(path) {
   setNosubStatus(`本页剩余 ${nosubScanData.found} 个无字幕文件`);
 }
 
+async function deleteNosubFile(button, path, name) {
+  if (!isLoggedIn()) {
+    openAuthModal("login");
+    return;
+  }
+  const ok = window.confirm(`确定删除这个视频文件？\n${name}\n${path}`);
+  if (!ok) return;
+
+  if (button) button.disabled = true;
+  try {
+    const res = await authFetch("/api/missing-subs/delete", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setNosubStatus(data.detail || "删除失败", true);
+      if (button) button.disabled = false;
+      return;
+    }
+    removeNosubItemFromView(path);
+    setNosubStatus(`已删除 ${name}`);
+  } catch (err) {
+    setNosubStatus(err.message || "删除失败", true);
+    if (button) button.disabled = false;
+  }
+}
+
 async function deleteNosubOriginal(item) {
   if (!item?.path) return;
   try {
@@ -624,6 +653,12 @@ nosubResultsEl?.addEventListener("click", (event) => {
   if (lookupBtn) {
     const item = findNosubItem(lookupBtn.dataset.path || "");
     if (item) lookupNosubItem(item);
+    return;
+  }
+  const deleteBtn = event.target.closest(".nosub-delete-btn");
+  if (deleteBtn) {
+    event.stopPropagation();
+    deleteNosubFile(deleteBtn, deleteBtn.dataset.path || "", deleteBtn.dataset.name || "");
     return;
   }
   const card = event.target.closest(".nosub-card");
