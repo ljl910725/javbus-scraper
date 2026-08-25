@@ -1675,6 +1675,146 @@ document.getElementById("p115SelectVideosBtn")?.addEventListener("click", () => 
   });
 });
 
+const p115MagnetInput = document.getElementById("p115MagnetInput");
+const p115ParseBtn = document.getElementById("p115ParseBtn");
+const p115PushAllBtn = document.getElementById("p115PushAllBtn");
+const p115PasteStatus = document.getElementById("p115PasteStatus");
+const p115PasteList = document.getElementById("p115PasteList");
+const MAGNET_LINK_RE = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*/gi;
+
+function setP115PasteStatus(message, isError = false, loading = false) {
+  if (!p115PasteStatus) return;
+  p115PasteStatus.textContent = message || "";
+  p115PasteStatus.classList.toggle("hidden", !message);
+  p115PasteStatus.classList.toggle("errors", Boolean(isError));
+  p115PasteStatus.classList.toggle("loading", Boolean(loading));
+}
+
+function extractMagnetLinks(text) {
+  const matches = String(text || "").match(MAGNET_LINK_RE) || [];
+  const seen = new Set();
+  const links = [];
+  for (const raw of matches) {
+    const link = raw.replace(/[.,;]+$/, "");
+    const key = link.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    links.push(link);
+  }
+  return links;
+}
+
+function renderP115PasteList(links) {
+  if (!p115PasteList) return;
+  if (!links.length) {
+    p115PasteList.innerHTML = "";
+    return;
+  }
+  p115PasteList.innerHTML = links
+    .map(
+      (link, index) => `
+      <div class="dup-file">
+        <div class="dup-file-name">
+          <strong>第 ${index + 1} 条</strong>
+          <button class="ghost-btn p115-parse-one-btn" type="button" data-link="${escapeAttr(link)}">解析这条</button>
+        </div>
+        <div class="dup-file-path">${escapeHtml(link)}</div>
+      </div>`
+    )
+    .join("");
+}
+
+function currentP115MagnetLinks() {
+  return extractMagnetLinks(p115MagnetInput?.value || "");
+}
+
+async function parsePastedP115Magnet(link) {
+  if (!isLoggedIn()) {
+    setP115PasteStatus("推送到 115 需要先登录", true);
+    openAuthModal("login");
+    return;
+  }
+  if (!p115Ready) {
+    setP115PasteStatus("115 未就绪，请先在配置页填写 Cookie，并选择离线保存目录", true);
+    return;
+  }
+  const magnet = (link || "").trim();
+  if (!magnet) {
+    setP115PasteStatus("请先粘贴磁力链接", true);
+    return;
+  }
+  setP115PasteStatus("正在打开解析窗口...", false, true);
+  await openP115MagnetModal({ magnet });
+  setP115PasteStatus(p115FolderPath ? `将推送到 ${p115FolderPath}` : "解析窗口已打开，确认后会推送到 115");
+}
+
+p115ParseBtn?.addEventListener("click", async () => {
+  const links = currentP115MagnetLinks();
+  renderP115PasteList(links);
+  if (!links.length) {
+    setP115PasteStatus("没有识别到 magnet 链接，请确认以 magnet:?xt=urn:btih: 开头", true);
+    return;
+  }
+  if (links.length > 1) {
+    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先解析第 1 条。也可点下面的「解析这条」。`);
+  }
+  await parsePastedP115Magnet(links[0]);
+});
+
+p115PushAllBtn?.addEventListener("click", async () => {
+  const links = currentP115MagnetLinks();
+  renderP115PasteList(links);
+  if (!links.length) {
+    setP115PasteStatus("没有识别到 magnet 链接", true);
+    return;
+  }
+  if (!isLoggedIn()) {
+    openAuthModal("login");
+    return;
+  }
+  if (!p115Ready) {
+    setP115PasteStatus("115 未就绪，请先在配置页填写 Cookie 并选择保存目录", true);
+    return;
+  }
+  const ok = window.confirm(`确定把 ${links.length} 条磁力整条推送到 115${p115FolderPath ? `\n${p115FolderPath}` : ""}？\n不会弹出选文件，整条任务都会下。`);
+  if (!ok) return;
+  p115ParseBtn.disabled = true;
+  p115PushAllBtn.disabled = true;
+  let success = 0;
+  try {
+    for (let index = 0; index < links.length; index += 1) {
+      setP115PasteStatus(`正在整条推送 ${index + 1}/${links.length}...`, false, true);
+      const res = await authFetch("/api/p115/magnet/push", {
+        method: "POST",
+        body: JSON.stringify({ magnet: links[index], info_hash: "", wanted: [] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `第 ${index + 1} 条推送失败`);
+      if (data.success) success += 1;
+    }
+    setP115PasteStatus(`已整条推送 ${success}/${links.length} 条到 115${p115FolderPath ? ` → ${p115FolderPath}` : ""}`);
+  } catch (err) {
+    setP115PasteStatus(err.message || "整条推送失败", true);
+  } finally {
+    p115ParseBtn.disabled = false;
+    p115PushAllBtn.disabled = false;
+  }
+});
+
+p115PasteList?.addEventListener("click", async (event) => {
+  const btn = event.target.closest(".p115-parse-one-btn");
+  if (!btn) return;
+  await parsePastedP115Magnet(btn.dataset.link || "");
+});
+
+p115MagnetInput?.addEventListener("input", () => {
+  const links = currentP115MagnetLinks();
+  renderP115PasteList(links);
+  if (links.length) {
+    setP115PasteStatus(`已识别 ${links.length} 条磁力链接`);
+  }
+});
+
 async function translateText(text, resultEl) {
   resultEl.classList.remove("hidden");
   resultEl.textContent = "翻译中...";
@@ -2202,7 +2342,7 @@ fuzzyQueryInput.addEventListener("keydown", (event) => {
 });
 
 const HOME_TAB_KEY = "javbus_home_tab";
-const HOME_TABS = ["search", "nosub", "dup", "cleanup"];
+const HOME_TABS = ["search", "nosub", "dup", "cleanup", "p115"];
 
 function setHomeTab(tab, { persist = true } = {}) {
   const next = HOME_TABS.includes(tab) ? tab : "search";

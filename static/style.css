@@ -2048,3 +2048,18 @@ button:disabled {
 .p115-magnet-actions {
   margin-top: 0.85rem;
 }
+
+#tabP115 textarea {
+  width: 100%;
+}
+
+.p115-paste-list {
+  margin-top: 0.85rem;
+}
+
+.p115-paste-list .dup-file-name {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}

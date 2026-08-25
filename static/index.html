@@ -11,7 +11,7 @@
     <header class="top-header">
       <div>
         <h1>JavBus 番号爬虫</h1>
-        <p class="subtitle">搜索番号、排查无字幕、筛选相同文件、清理垃圾</p>
+        <p class="subtitle">搜索番号、排查无字幕、筛选相同文件、清理垃圾、推送115</p>
       </div>
       <div class="header-actions">
         <div id="userMenu" class="user-menu hidden">
@@ -36,6 +36,7 @@
       <button id="tabBtnNosub" class="app-tab" type="button" data-tab="nosub" role="tab" aria-selected="false">排查无字幕</button>
       <button id="tabBtnDup" class="app-tab" type="button" data-tab="dup" role="tab" aria-selected="false">筛选相同文件</button>
       <button id="tabBtnCleanup" class="app-tab" type="button" data-tab="cleanup" role="tab" aria-selected="false">清理垃圾</button>
+      <button id="tabBtnP115" class="app-tab" type="button" data-tab="p115" role="tab" aria-selected="false">推送115</button>
     </nav>
 
     <section id="configInfo" class="config-info hidden"></section>
@@ -163,6 +164,20 @@
       </div>
       <div id="cleanupStatus" class="status hidden"></div>
       <div id="cleanupResults" class="cleanup-results"></div>
+    </section>
+    </div>
+
+    <div id="tabP115" class="tab-panel hidden" data-tab-panel="p115">
+    <section class="dup-panel">
+      <p class="field-hint">把磁力链接粘贴到下面，解析后勾选要下载的文件，再推送到配置里的 115 目录。支持从整段文本里自动提取 magnet 链接。</p>
+      <label for="p115MagnetInput">磁力链接</label>
+      <textarea id="p115MagnetInput" rows="6" placeholder="magnet:?xt=urn:btih:xxxxxxxx&#10;也可直接粘贴网页或论坛里带磁链的整段文字"></textarea>
+      <div class="options">
+        <button id="p115ParseBtn" type="button">解析并选择文件</button>
+        <button id="p115PushAllBtn" class="ghost-btn" type="button">全部整条推送</button>
+      </div>
+      <div id="p115PasteStatus" class="status hidden"></div>
+      <div id="p115PasteList" class="p115-paste-list"></div>
     </section>
     </div>
   </div>
