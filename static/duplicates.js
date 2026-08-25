@@ -155,9 +155,9 @@ function renderDupResults(data) {
   dupResultsEl.innerHTML = groups
     .map(
       (group) => `
-      <section class="dup-group" data-code="${escapeAttr(group.code)}">
+      <section class="dup-group" data-code="${escapeAttr(group.code)}" data-part="${escapeAttr(group.part || "")}">
         <div class="dup-group-header">
-          <h3>${escapeHtml(group.code)}</h3>
+          <h3>${escapeHtml(group.code)}${group.part ? ` · ${escapeHtml(group.part)}` : ""}</h3>
           <small>${group.count} 个文件</small>
         </div>
         ${(group.files || [])

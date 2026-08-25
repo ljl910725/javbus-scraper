@@ -301,6 +301,7 @@ class DuplicateScanRequest(BaseModel):
 
 class DuplicateFileItem(BaseModel):
     code: str
+    part: str = ""
     name: str
     path: str
     parent_dir: str = ""
@@ -310,6 +311,7 @@ class DuplicateFileItem(BaseModel):
 
 class DuplicateGroup(BaseModel):
     code: str
+    part: str = ""
     count: int
     files: list[DuplicateFileItem] = Field(default_factory=list)
 
@@ -330,3 +332,32 @@ class DuplicateDeleteRequest(BaseModel):
 class DuplicateDeleteResponse(BaseModel):
     path: str
     deleted: bool = True
+
+
+class MissingSubScanRequest(BaseModel):
+    folders: list[str] = Field(default_factory=list)
+
+
+class MissingSubItem(BaseModel):
+    code: str = ""
+    part: str = ""
+    name: str
+    path: str
+    parent_dir: str = ""
+    size: str = ""
+    mtime: str = ""
+    nfo_path: str = ""
+    title: str = ""
+    plot: str = ""
+    date: str = ""
+    studio: str = ""
+    actors: list[str] = Field(default_factory=list)
+    images: list[str] = Field(default_factory=list)
+
+
+class MissingSubScanResponse(BaseModel):
+    items: list[MissingSubItem] = Field(default_factory=list)
+    scanned: int = 0
+    videos: int = 0
+    found: int = 0
+    truncated: bool = False

@@ -1405,23 +1405,30 @@ async function loadConfig() {
   }
 }
 
-async function pushToOffline({ magnets = [], code = null, pushBest = false, button = null, pushFolderId = null }) {
+async function pushToOffline({
+  magnets = [],
+  code = null,
+  pushBest = false,
+  button = null,
+  pushFolderId = null,
+  onSuccess = null,
+}) {
   if (!pushReady) {
     setStatus("推送未就绪，请登录后在配置页设置 CD2 或 115");
-    return;
+    return false;
   }
 
   if (pushBackend === "cd2") {
     if (!pushFolders.length) {
       setStatus("未配置可用推送目录，请先在设置页添加");
-      return;
+      return false;
     }
     if (!pushFolderId) {
       if (pushFolders.length === 1) {
         pushFolderId = pushFolders[0].id;
       } else {
-        openPushFolderModal({ magnets, code, pushBest, button });
-        return;
+        openPushFolderModal({ magnets, code, pushBest, button, onSuccess });
+        return false;
       }
     }
   }
@@ -1447,9 +1454,14 @@ async function pushToOffline({ magnets = [], code = null, pushBest = false, butt
     const folderHint = folder ? ` → ${folder.name}` : "";
     setStatus(`${data.backend === "cd2" ? "CD2" : "115"}${folderHint} ${data.message || "推送完成"}`);
     if (button) button.textContent = "已推送";
+    if (typeof onSuccess === "function") {
+      await onSuccess(data);
+    }
+    return true;
   } catch (err) {
     setStatus(`推送失败: ${err.message}`);
     if (button) button.textContent = originalText || pushLabel;
+    return false;
   } finally {
     if (button) button.disabled = false;
   }

@@ -14,8 +14,10 @@ VIDEO_EXTENSIONS = {
 
 _TRAILING_SUFFIX = re.compile(
     r"(?i)(?:[-_.\s]*(?:uncensored|leaked|leak|hdr10|2160p|1080p|720p|"
-    r"uc|ch|us|eu|4k|8k|hdr|uhd|fhd|hd|cd\d+|part\d+|disc\d+|c|u))+$"
+    r"uc|ch|us|eu|4k|8k|hdr|uhd|fhd|hd|c|u))+$"
 )
+_C_SUBTITLE_RE = re.compile(r"(?i)(?:^|[-_.\s])C(?:[-_.\s]|$)")
+_PART_RE = re.compile(r"(?i)(?:^|[-_.\s])((?:cd|part|disc|dvd)[-_]?\d+)(?=$|[-_.\s])")
 
 _CODE_RE = re.compile(
     r"(?ix)"
@@ -67,7 +69,39 @@ def extract_jav_code(filename: str) -> str | None:
     return _normalize_code(match.group(1))
 
 
-def _file_payload(dirpath: str, name: str, code: str) -> dict:
+def has_c_subtitle(filename: str) -> bool:
+    """True when the name has a standalone -C token, not -CD1/-CH/-UC."""
+    stem = _strip_video_extension(Path(filename).name)
+    return bool(_C_SUBTITLE_RE.search(stem.replace(".", " ")))
+
+
+def extract_part_tag(filename: str) -> str:
+    stem = _TRAILING_SUFFIX.sub("", _strip_video_extension(Path(filename).name)).strip(" .-_")
+    blob = f" {stem.replace('.', ' ')} "
+    found = _PART_RE.findall(blob)
+    if not found:
+        return ""
+    raw = re.sub(r"[-_]", "", found[-1].upper())
+    match = re.fullmatch(r"(CD|PART|DISC|DVD)(\d+)", raw)
+    if not match:
+        return raw
+    return f"{match.group(1)}{match.group(2)}"
+
+
+def duplicate_key(filename: str) -> str | None:
+    code = extract_jav_code(filename)
+    if not code:
+        return None
+    part = extract_part_tag(filename)
+    return f"{code}#{part}" if part else code
+
+
+def split_duplicate_key(key: str) -> tuple[str, str]:
+    code, sep, part = key.partition("#")
+    return (code, part) if sep else (key, "")
+
+
+def _file_payload(dirpath: str, name: str, code: str, part: str = "") -> dict:
     path = Path(dirpath) / name
     try:
         stat = path.stat()
@@ -78,6 +112,7 @@ def _file_payload(dirpath: str, name: str, code: str) -> dict:
         mtime = "0"
     return {
         "code": code,
+        "part": part,
         "name": name,
         "path": str(path),
         "parent_dir": dirpath,
@@ -88,13 +123,14 @@ def _file_payload(dirpath: str, name: str, code: str) -> dict:
 
 def _build_groups(grouped: dict[str, list[tuple[str, str]]]) -> list[dict]:
     groups = []
-    for code, items in grouped.items():
+    for key, items in grouped.items():
         if len(items) < 2:
             continue
-        files = [_file_payload(dirpath, name, code) for dirpath, name in items]
-        files.sort(key=lambda item: (item["parent_dir"], item["name"]))
-        groups.append({"code": code, "count": len(files), "files": files})
-    groups.sort(key=lambda item: (-item["count"], item["code"]))
+        code, part = split_duplicate_key(key)
+        files = [_file_payload(dirpath, name, code, part) for dirpath, name in items]
+        files.sort(key=lambda item: (item["parent_dir"].lower(), item["name"].lower()))
+        groups.append({"code": code, "part": part, "count": len(files), "files": files})
+    groups.sort(key=lambda item: (-item["count"], item["code"], item["part"]))
     return groups
 
 
@@ -206,10 +242,10 @@ def iter_scan_duplicate_videos(folders: list[str], *, stop=None):
                 if suffix not in VIDEO_EXTENSIONS:
                     continue
                 videos += 1
-                code = extract_jav_code(name)
-                if not code:
+                key = duplicate_key(name)
+                if not key:
                     continue
-                grouped[code].append((dirpath, name))
+                grouped[key].append((dirpath, name))
             if truncated:
                 break
         if truncated:

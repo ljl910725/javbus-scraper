@@ -65,7 +65,7 @@
 
     <section class="dup-panel">
       <h2>筛选相同文件</h2>
-      <p class="field-hint">选择一个或多个文件夹，找出番号相同的视频。匹配时忽略 -C / -U / -ch 等后缀和视频格式，列表仍显示完整文件名。</p>
+      <p class="field-hint">选择一个或多个文件夹，找出番号相同的视频。匹配时忽略大小写、-C / -U / -ch 等后缀和视频格式；-cd1 与 -cd2 不算同名。列表仍显示完整文件名。</p>
       <div id="dupSelectedFolders" class="dup-chips"></div>
       <div class="options">
         <button id="dupAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
@@ -82,6 +82,27 @@
       </div>
       <div id="dupStatus" class="status hidden"></div>
       <div id="dupResults" class="dup-results"></div>
+    </section>
+
+    <section class="dup-panel">
+      <h2>排查无字幕文件</h2>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。-cd1 / -cd2 不会被当成有字幕；大小写不敏感。可查看目录图片、NFO 信息，并一键到 JavBus 搜索番号。</p>
+      <div id="nosubSelectedFolders" class="dup-chips"></div>
+      <div class="options">
+        <button id="nosubAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
+        <button id="nosubClearFoldersBtn" class="ghost-btn" type="button">清空已选</button>
+        <button id="nosubScanBtn" type="button">开始排查</button>
+        <button id="nosubCancelBtn" class="ghost-btn hidden" type="button">取消扫描</button>
+      </div>
+      <div id="nosubProgress" class="dup-progress hidden">
+        <div class="dup-progress-track">
+          <div id="nosubProgressFill" class="dup-progress-fill"></div>
+        </div>
+        <div id="nosubProgressText" class="dup-progress-text"></div>
+        <div id="nosubProgressPath" class="dup-progress-path"></div>
+      </div>
+      <div id="nosubStatus" class="status hidden"></div>
+      <div id="nosubResults" class="nosub-results"></div>
     </section>
   </div>
 
@@ -118,6 +139,18 @@
       </div>
       <div id="lightboxCounter" class="lightbox-counter"></div>
       <div id="lightboxThumbs" class="lightbox-thumbs"></div>
+    </div>
+  </div>
+
+  <div id="nosubLookupModal" class="modal hidden">
+    <div class="modal-card nosub-lookup-modal-card">
+      <div class="modal-header">
+        <h2 id="nosubLookupTitle">JavBus 查询</h2>
+        <button id="closeNosubLookupModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <p id="nosubLookupHint" class="field-hint"></p>
+      <div id="nosubLookupStatus" class="status hidden"></div>
+      <div id="nosubLookupResults" class="nosub-lookup-results"></div>
     </div>
   </div>
 
@@ -192,9 +225,27 @@
     </div>
   </div>
 
+  <div id="nosubFolderModal" class="modal hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header">
+        <h2>选择要排查的文件夹</h2>
+        <button id="closeNosubFolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-modal-toolbar">
+        <button id="nosubFolderUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="nosubFolderCurrentPath" class="folder-current-path">/</span>
+        <button id="nosubFolderAddCurrentBtn" class="ghost-btn" type="button">添加当前目录</button>
+      </div>
+      <p class="field-hint">可添加多个文件夹；会递归扫描其中没有独立 -C 的视频</p>
+      <div id="nosubFolderList" class="folder-list"></div>
+      <p id="nosubFolderModalStatus" class="inline-status"></p>
+    </div>
+  </div>
+
   <script src="/static/auth.js"></script>
   <script src="/static/nav.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/duplicates.js"></script>
+  <script src="/static/nosub.js"></script>
 </body>
 </html>
