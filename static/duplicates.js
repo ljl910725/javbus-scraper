@@ -194,7 +194,7 @@ function renderDupResults(data) {
       (group) => `
       <section class="dup-group" data-code="${escapeAttr(group.code)}" data-part="${escapeAttr(group.part || "")}">
         <div class="dup-group-header">
-          <h3>${escapeHtml(group.code)}${group.part ? ` · ${escapeHtml(group.part)}` : ""}</h3>
+          <h3 class="copy-code" data-code="${escapeAttr(group.code)}" title="点击复制番号">${escapeHtml(group.code)}${group.part ? ` · ${escapeHtml(group.part)}` : ""}</h3>
           <small>${group.count} 个文件</small>
         </div>
         ${(group.files || [])

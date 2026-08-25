@@ -220,7 +220,11 @@ function renderNosubItem(item) {
       <div class="fuzzy-cover">${coverHtml}</div>
       <div class="fuzzy-info">
         <div class="fuzzy-code-row">
-          <span class="fuzzy-code">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>
+          ${
+            item.code
+              ? `<span class="fuzzy-code copy-code" data-code="${escapeAttr(item.code)}" title="点击复制番号">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>`
+              : `<span class="fuzzy-code">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>`
+          }
         </div>
         <div class="fuzzy-title">${escapeHtml(title)}</div>
         ${dateText}

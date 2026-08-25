@@ -78,3 +78,35 @@ function initNav(options = {}) {
     options.onLogout?.();
   });
 }
+
+async function copyCodeToClipboard(code, el) {
+  const value = (code || "").trim();
+  if (!value) return false;
+  try {
+    await navigator.clipboard.writeText(value);
+    if (el) {
+      el.classList.add("is-copied");
+      window.clearTimeout(Number(el.dataset.copyTimer || 0));
+      el.dataset.copyTimer = String(
+        window.setTimeout(() => el.classList.remove("is-copied"), 1200)
+      );
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+document.addEventListener(
+  "click",
+  async (event) => {
+    const el = event.target.closest(".copy-code");
+    if (!el) return;
+    const code = (el.dataset.code || "").trim();
+    if (!code) return;
+    event.preventDefault();
+    event.stopPropagation();
+    await copyCodeToClipboard(code, el);
+  },
+  true
+);

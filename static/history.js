@@ -36,7 +36,7 @@ function renderPushHistory(items) {
           : "-";
       const title = item.magnet_title || item.code || "磁力推送";
       const codeHtml = item.code
-        ? `<a class="push-history-code push-history-detail-link" href="${buildDetailUrl(item.code)}">${escapeHtml(item.code)}</a>`
+        ? `<button class="push-history-code copy-code" type="button" data-code="${escapeHtml(item.code)}" title="点击复制番号">${escapeHtml(item.code)}</button>`
         : "";
       const detailLinkHtml = item.code
         ? `<a class="ghost-btn push-history-detail-link" href="${buildDetailUrl(item.code)}">查看详情</a>`

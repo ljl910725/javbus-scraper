@@ -438,6 +438,24 @@ header h1 {
   margin-bottom: 0.3rem;
 }
 
+.copy-code {
+  cursor: pointer;
+}
+
+.copy-code:hover {
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
+.copy-code.is-copied::after {
+  content: " 已复制";
+  margin-left: 0.2rem;
+  color: var(--success);
+  font-weight: 600;
+  font-size: 0.75em;
+  text-decoration: none;
+}
+
 .fuzzy-code {
   font-size: 0.8rem;
   font-weight: 700;
@@ -600,8 +618,13 @@ button:disabled {
 
 .push-history-code {
   margin-left: 0.5rem;
-  color: var(--muted);
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--accent);
   font-size: 0.85rem;
+  font-weight: 700;
+  cursor: pointer;
 }
 
 .push-history-title-link,
@@ -1792,6 +1815,10 @@ button:disabled {
 .dup-group-header h3 {
   margin: 0;
   font-size: 1rem;
+}
+
+.dup-group-header h3.copy-code {
+  color: var(--accent);
 }
 
 .dup-group-header small {

@@ -410,7 +410,7 @@ function renderListItem(item) {
       <div class="fuzzy-cover">${coverHtml}</div>
       <div class="fuzzy-info">
         <div class="fuzzy-code-row">
-          <span class="fuzzy-code">${escapeHtml(item.code)}</span>
+          <span class="fuzzy-code copy-code" data-code="${escapeHtml(item.code)}" title="点击复制番号">${escapeHtml(item.code)}</span>
           ${badges ? `<div class="fuzzy-badges">${badges}</div>` : ""}
         </div>
         <div class="fuzzy-title">${escapeHtml(title)}</div>
@@ -1300,7 +1300,7 @@ function renderMovieCard(movie) {
       <div class="card-header">
         <div class="cover">${renderPrivacyImage(movie.cover_path ? `/covers/${movie.cover_path.split(/[/\\]/).pop()}` : movie.cover_url, movie.source_url, movie.code, previewCount)}</div>
         <div class="card-info">
-          <span class="code-badge">${escapeHtml(movie.code)}</span>
+          <span class="code-badge copy-code" data-code="${escapeHtml(movie.code)}" title="点击复制番号">${escapeHtml(movie.code)}</span>
           ${renderTitle(movie)}
           <dl class="meta">
             ${renderTranslatable("演员", (movie.actresses || []).join("、"))}
