@@ -1986,7 +1986,7 @@ fuzzyQueryInput.addEventListener("keydown", (event) => {
 });
 
 const HOME_TAB_KEY = "javbus_home_tab";
-const HOME_TABS = ["search", "nosub", "dup"];
+const HOME_TABS = ["search", "nosub", "dup", "cleanup"];
 
 function setHomeTab(tab, { persist = true } = {}) {
   const next = HOME_TABS.includes(tab) ? tab : "search";

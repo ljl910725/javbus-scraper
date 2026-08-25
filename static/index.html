@@ -11,7 +11,7 @@
     <header class="top-header">
       <div>
         <h1>JavBus 番号爬虫</h1>
-        <p class="subtitle">搜索番号、排查无字幕、筛选相同文件</p>
+        <p class="subtitle">搜索番号、排查无字幕、筛选相同文件、清理垃圾</p>
       </div>
       <div class="header-actions">
         <div id="userMenu" class="user-menu hidden">
@@ -35,6 +35,7 @@
       <button id="tabBtnSearch" class="app-tab active" type="button" data-tab="search" role="tab" aria-selected="true">搜索番号</button>
       <button id="tabBtnNosub" class="app-tab" type="button" data-tab="nosub" role="tab" aria-selected="false">排查无字幕</button>
       <button id="tabBtnDup" class="app-tab" type="button" data-tab="dup" role="tab" aria-selected="false">筛选相同文件</button>
+      <button id="tabBtnCleanup" class="app-tab" type="button" data-tab="cleanup" role="tab" aria-selected="false">清理垃圾</button>
     </nav>
 
     <section id="configInfo" class="config-info hidden"></section>
@@ -135,6 +136,33 @@
       <div id="dupStatus" class="status hidden"></div>
       <div id="dupPager" class="list-pagination hidden"></div>
       <div id="dupResults" class="dup-results"></div>
+    </section>
+    </div>
+
+    <div id="tabCleanup" class="tab-panel hidden" data-tab-panel="cleanup">
+    <section class="dup-panel">
+      <p class="field-hint">选择目录后递归删除 html / txt、小于 100MB 的视频，以及你填写的额外后缀（额外后缀不限大小，匹配到就删）。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。</p>
+      <div id="cleanupSelectedFolders" class="dup-chips"></div>
+      <label class="cleanup-exts">
+        额外后缀
+        <input id="cleanupExtraExts" type="text" placeholder="例如 nfo, url, jpg（逗号或空格分隔，不区分大小写）" />
+      </label>
+      <div class="options">
+        <button id="cleanupAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
+        <button id="cleanupClearFoldersBtn" class="ghost-btn" type="button">清空已选</button>
+        <button id="cleanupScanBtn" type="button">扫描预览</button>
+        <button id="cleanupRunBtn" class="danger-btn" type="button">开始清理</button>
+        <button id="cleanupCancelBtn" class="ghost-btn hidden" type="button">取消</button>
+      </div>
+      <div id="cleanupProgress" class="dup-progress hidden">
+        <div class="dup-progress-track">
+          <div id="cleanupProgressFill" class="dup-progress-fill"></div>
+        </div>
+        <div id="cleanupProgressText" class="dup-progress-text"></div>
+        <div id="cleanupProgressPath" class="dup-progress-path"></div>
+      </div>
+      <div id="cleanupStatus" class="status hidden"></div>
+      <div id="cleanupResults" class="cleanup-results"></div>
     </section>
     </div>
   </div>
@@ -275,10 +303,28 @@
     </div>
   </div>
 
+  <div id="cleanupFolderModal" class="modal hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header">
+        <h2>选择要清理的文件夹</h2>
+        <button id="closeCleanupFolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-modal-toolbar">
+        <button id="cleanupFolderUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="cleanupFolderCurrentPath" class="folder-current-path">/</span>
+        <button id="cleanupFolderAddCurrentBtn" class="ghost-btn" type="button">添加当前目录</button>
+      </div>
+      <p class="field-hint">可添加多个文件夹；会递归处理其中的垃圾文件和变空的子文件夹</p>
+      <div id="cleanupFolderList" class="folder-list"></div>
+      <p id="cleanupFolderModalStatus" class="inline-status"></p>
+    </div>
+  </div>
+
   <script src="/static/auth.js"></script>
   <script src="/static/nav.js"></script>
   <script src="/static/app.js"></script>
   <script src="/static/duplicates.js"></script>
   <script src="/static/nosub.js"></script>
+  <script src="/static/cleanup.js"></script>
 </body>
 </html>

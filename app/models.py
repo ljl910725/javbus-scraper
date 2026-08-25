@@ -340,6 +340,11 @@ class MissingSubScanRequest(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
+class CleanupRequest(BaseModel):
+    folders: list[str] = Field(default_factory=list)
+    extra_exts: str = ""
+
+
 class MissingSubItem(BaseModel):
     code: str = ""
     part: str = ""
