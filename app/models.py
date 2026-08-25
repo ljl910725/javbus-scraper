@@ -293,3 +293,40 @@ class SubtitleSaveResponse(BaseModel):
     path: str
     filename: str
     size: int
+
+
+class DuplicateScanRequest(BaseModel):
+    folders: list[str] = Field(default_factory=list)
+
+
+class DuplicateFileItem(BaseModel):
+    code: str
+    name: str
+    path: str
+    parent_dir: str = ""
+    size: str = ""
+    mtime: str = ""
+
+
+class DuplicateGroup(BaseModel):
+    code: str
+    count: int
+    files: list[DuplicateFileItem] = Field(default_factory=list)
+
+
+class DuplicateScanResponse(BaseModel):
+    groups: list[DuplicateGroup] = Field(default_factory=list)
+    scanned: int = 0
+    videos: int = 0
+    duplicate_codes: int = 0
+    duplicate_files: int = 0
+    truncated: bool = False
+
+
+class DuplicateDeleteRequest(BaseModel):
+    path: str
+
+
+class DuplicateDeleteResponse(BaseModel):
+    path: str
+    deleted: bool = True

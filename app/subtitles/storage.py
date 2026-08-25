@@ -7,9 +7,11 @@ from pathlib import Path
 from app.config import settings
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-_VIDEO_EXTENSIONS = {
-    ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".mpg", ".mpeg",
+VIDEO_EXTENSIONS = {
+    ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
+    ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",
 }
+_VIDEO_EXTENSIONS = VIDEO_EXTENSIONS
 _MAX_SEARCH_RESULTS = 50
 _MAX_SCAN_ENTRIES = 8000
 
@@ -101,6 +103,26 @@ def resolve_directory(path: str | None) -> Path:
         raise ValueError("目录不存在或不可访问")
     if not _path_within_roots(resolved, roots):
         raise ValueError("只能访问已挂载的字幕保存目录")
+    return resolved
+
+
+def resolve_file(path: str) -> Path:
+    roots = get_browse_roots()
+    if not roots:
+        raise ValueError("未配置可浏览的目录")
+
+    value = (path or "").strip()
+    if not value:
+        raise ValueError("文件路径不能为空")
+
+    candidate = Path(value)
+    if not candidate.is_absolute():
+        candidate = Path(__file__).resolve().parent.parent.parent / candidate
+    resolved = candidate.resolve()
+    if not resolved.exists() or not resolved.is_file():
+        raise ValueError("文件不存在或不可访问")
+    if not _path_within_roots(resolved, roots):
+        raise ValueError("只能操作已挂载目录内的文件")
     return resolved
 
 
