@@ -76,19 +76,19 @@ class SearchPreview:
 
 def _parse_search_tags(box: Tag) -> dict[str, bool]:
     flags = {"has_hd": False, "has_ultra": False, "has_subtitle": False}
-    for btn in box.select(".item-tag button"):
+    for btn in box.select(".item-tag button, .item-tag span"):
         text = btn.get_text(strip=True)
         title = btn.get("title", "") or ""
         combined = f"{text} {title}"
 
-        if text == "超清" or "超清" in title:
+        if text == "超清" or "超清" in title or "UHD" in combined.upper() or "4K" in combined.upper():
             flags["has_ultra"] = True
-            continue
-        if text == "高清" or ("高清" in combined and "超清" not in combined) or "HD" in title.upper():
+        if text == "高清" or "高清" in combined or "HD" in title.upper():
             flags["has_hd"] = True
-            continue
-        if text == "字幕" or "字幕" in combined:
+        if text == "字幕" or "字幕" in combined or "subtitle" in combined.lower():
             flags["has_subtitle"] = True
+    if flags["has_ultra"]:
+        flags["has_hd"] = True
     return flags
 
 

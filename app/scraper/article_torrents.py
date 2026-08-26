@@ -8,6 +8,23 @@ from app.models import MagnetLink
 from app.scraper.magnets import format_size_mb, sort_magnets
 
 _UHD_RE = re.compile(r"4k|uhd|超清", re.IGNORECASE)
+_SUB_RE = re.compile(
+    r"字幕|中字|中文|chs|cht|zh-?cn|chinese|自提征用|(?:^|[-_\s])c(?:$|[-_\s])",
+    re.IGNORECASE,
+)
+
+
+def _flag_true(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value or "").strip().lower()
+    return text in {"1", "true", "yes", "y", "cn", "chinese", "zh", "中文"}
+
+
+def title_has_subtitle(title: str) -> bool:
+    return bool(_SUB_RE.search(title or ""))
 
 
 def _item_to_magnet(item: dict) -> MagnetLink | None:
@@ -16,14 +33,20 @@ def _item_to_magnet(item: dict) -> MagnetLink | None:
         return None
 
     title = str(item.get("title") or "").strip() or link
-    is_uhd = bool(item.get("uhd")) or bool(_UHD_RE.search(title))
+    is_uhd = _flag_true(item.get("uhd")) or bool(_UHD_RE.search(title))
+    has_subtitle = (
+        _flag_true(item.get("chinese"))
+        or _flag_true(item.get("subtitle"))
+        or _flag_true(item.get("has_subtitle"))
+        or title_has_subtitle(title)
+    )
     return MagnetLink(
         title=title,
         link=link,
         size=format_size_mb(item.get("size_mb")),
         is_hd=True,
         is_uhd=is_uhd,
-        has_subtitle=bool(item.get("chinese")),
+        has_subtitle=has_subtitle,
         site=str(item.get("site") or "").strip(),
     )
 
@@ -70,8 +93,36 @@ def quality_flags_from_magnets(magnets: list[MagnetLink]) -> dict[str, bool]:
     return {
         "has_ultra": any(m.is_uhd for m in magnets),
         "has_hd": any(m.is_hd or m.is_uhd for m in magnets),
-        "has_subtitle": any(m.has_subtitle for m in magnets),
+        "has_subtitle": any(m.has_subtitle or title_has_subtitle(m.title) for m in magnets),
     }
+
+
+def magnets_matching_code(code: str, magnets: list[MagnetLink]) -> list[MagnetLink]:
+    from app.scraper.parser import normalize_code
+
+    normalized = normalize_code(code or "") or (code or "").strip().upper()
+    compact = re.sub(r"[^A-Z0-9]", "", normalized)
+    if not compact:
+        return []
+    matched: list[MagnetLink] = []
+    for magnet in magnets:
+        blob = re.sub(r"[^A-Z0-9]", "", (magnet.title or "").upper())
+        if compact in blob:
+            matched.append(magnet)
+    return matched
+
+
+def merge_quality_flags(*groups: dict[str, bool]) -> dict[str, bool]:
+    merged = {"has_ultra": False, "has_hd": False, "has_subtitle": False}
+    for group in groups:
+        if not group:
+            continue
+        merged["has_ultra"] = merged["has_ultra"] or bool(group.get("has_ultra"))
+        merged["has_hd"] = merged["has_hd"] or bool(group.get("has_hd"))
+        merged["has_subtitle"] = merged["has_subtitle"] or bool(group.get("has_subtitle"))
+    if merged["has_ultra"]:
+        merged["has_hd"] = True
+    return merged
 
 
 async def fetch_article_quality_map(codes: list[str]) -> dict[str, dict[str, bool]]:
@@ -122,6 +173,9 @@ async def fetch_article_quality_map(codes: list[str]) -> dict[str, dict[str, boo
                     if magnet:
                         magnets.append(magnet)
                 flags[code] = quality_flags_from_magnets(magnets)
+                compact = re.sub(r"[^A-Z0-9]", "", code)
+                if compact and compact not in flags:
+                    flags[compact] = flags[code]
 
         await asyncio.gather(*(one(code) for code in unique))
     return flags

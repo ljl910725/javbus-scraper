@@ -206,6 +206,13 @@ function getPaginatedListResults() {
   };
 }
 
+function magnetHasSubtitle(magnet) {
+  return (
+    Boolean(magnet?.has_subtitle) ||
+    /字幕|中字|中文|chs|cht|chinese|自提征用|(?:^|[-_\s])c(?:$|[-_\s])/i.test(magnet?.title || "")
+  );
+}
+
 function movieToListItem(movie) {
   const best = movie.magnets?.[0];
   const magnets = movie.magnets || [];
@@ -219,7 +226,7 @@ function movieToListItem(movie) {
     release_date: movie.release_date,
     has_hd: magnets.some((m) => m.is_hd || m.is_uhd),
     has_ultra: magnets.some((m) => m.is_uhd || /超清|4k|uhd/i.test(m.title || "")),
-    has_subtitle: Boolean(best?.has_subtitle) || magnets.some((m) => m.has_subtitle),
+    has_subtitle: magnets.some((m) => magnetHasSubtitle(m)),
     best_magnet_link: best?.link || "",
     best_magnet_title: best?.title || "",
   };
@@ -254,7 +261,7 @@ function applyMagnetToListItem(code, magnet) {
   item.best_magnet_link = magnet.link;
   item.best_magnet_title = magnet.title;
   item.has_hd = Boolean(magnet.is_hd) || Boolean(magnet.is_uhd) || item.has_hd;
-  item.has_subtitle = Boolean(magnet.has_subtitle) || item.has_subtitle;
+  item.has_subtitle = magnetHasSubtitle(magnet) || item.has_subtitle;
   item.has_ultra = item.has_ultra || Boolean(magnet.is_uhd) || /超清|4k|uhd/i.test(magnet.title || "");
   return item.best_magnet_link;
 }
@@ -1303,7 +1310,7 @@ function renderMagnetBadges(magnet) {
   if (site) badges.push(`<span class="badge badge-site">${escapeHtml(site)}</span>`);
   if (magnet.is_uhd) badges.push('<span class="badge badge-uhd">UHD</span>');
   else if (magnet.is_hd) badges.push('<span class="badge badge-hd">HD</span>');
-  if (magnet.has_subtitle) badges.push('<span class="badge badge-sub">字幕</span>');
+  if (magnetHasSubtitle(magnet)) badges.push('<span class="badge badge-sub">字幕</span>');
   return badges.join("");
 }
 

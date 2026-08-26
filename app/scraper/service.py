@@ -7,7 +7,13 @@ import httpx
 
 from app.config import settings
 from app.models import MovieInfo
-from app.scraper.article_torrents import fetch_article_quality_map, fetch_article_torrents
+from app.scraper.article_torrents import (
+    fetch_article_quality_map,
+    fetch_article_torrents,
+    magnets_matching_code,
+    merge_quality_flags,
+    quality_flags_from_magnets,
+)
 from app.scraper.client import JavBusClient, get_client
 from app.scraper.magnets import fetch_magnets, merge_magnets, sort_magnets
 from app.scraper.parser import (
@@ -271,7 +277,10 @@ async def fuzzy_search_movies(
 
     client = get_client(user_settings)
     search_url = build_fuzzy_search_url(keywords)
-    html = await client.get_text(search_url)
+    html, query_magnets = await asyncio.gather(
+        client.get_text(search_url),
+        fetch_article_torrents(keywords),
+    )
     previews = parse_fuzzy_search_page(html, source_url=search_url)
     if not previews:
         raise ScrapeError(f"未找到与「{keywords}」相关的影片")
@@ -279,7 +288,14 @@ async def fuzzy_search_movies(
     quality_map = await fetch_article_quality_map([item.code for item in previews])
     results = []
     for item in previews:
-        extra = quality_map.get(normalize_code(item.code) or (item.code or "").upper()) or {}
+        code_key = normalize_code(item.code) or (item.code or "").upper()
+        compact = re.sub(r"[^A-Z0-9]", "", code_key)
+        matched = magnets_matching_code(item.code, query_magnets)
+        extra = merge_quality_flags(
+            quality_map.get(code_key) or {},
+            quality_map.get(compact) or {},
+            quality_flags_from_magnets(matched),
+        )
         results.append(
             {
                 "code": item.code,
