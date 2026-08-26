@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JavBus 番号爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=26082614" />
+  <link rel="stylesheet" href="/static/style.css?v=26082615" />
 </head>
 <body>
   <div class="container">
@@ -76,7 +76,7 @@
 
     <div id="tabNosub" class="tab-panel hidden" data-tab-panel="nosub">
     <section class="dup-panel">
-      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现。也可以一键把目录里所有无字幕文件查一遍，有字幕就按当前推送配置（CD2 或 115）推送并删除原文件。同一文件夹 5 分钟内不能重复执行一键替换。</p>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查和一键替换都会跳过。一键替换没找到字幕的会自动加入忽略列表。同一文件夹 5 分钟内不能重复执行一键替换。</p>
       <div class="nosub-views">
         <button id="nosubViewScanBtn" class="app-tab active" type="button" data-nosub-view="scan">排查结果</button>
         <button id="nosubViewIgnoredBtn" class="app-tab" type="button" data-nosub-view="ignored">忽略列表</button>
@@ -407,11 +407,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26082614"></script>
-  <script src="/static/nav.js?v=26082614"></script>
-  <script src="/static/app.js?v=26082614"></script>
-  <script src="/static/duplicates.js?v=26082614"></script>
-  <script src="/static/nosub.js?v=26082614"></script>
-  <script src="/static/cleanup.js?v=26082614"></script>
+  <script src="/static/auth.js?v=26082615"></script>
+  <script src="/static/nav.js?v=26082615"></script>
+  <script src="/static/app.js?v=26082615"></script>
+  <script src="/static/duplicates.js?v=26082615"></script>
+  <script src="/static/nosub.js?v=26082615"></script>
+  <script src="/static/cleanup.js?v=26082615"></script>
 </body>
 </html>

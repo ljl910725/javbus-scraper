@@ -139,7 +139,20 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
         await asyncio.sleep(max(0.3, float(settings.request_delay)))
 
     if magnet is None:
-        return _item_payload(item, status="not_found", message="未找到带字幕磁力")
+        if path:
+            ignored = db.add_ignored_missing_sub(
+                user["id"],
+                path=path,
+                name=item.get("name") or "",
+                code=code,
+                part=item.get("part") or "",
+                title=item.get("title") or "",
+                size=str(item.get("size") or ""),
+                parent_dir=item.get("parent_dir") or "",
+                message="一键替换：未找到带字幕磁力",
+            )
+            db.update_ignored_missing_sub(ignored["id"], mark_checked=True)
+        return _item_payload(item, status="not_found", message="未找到带字幕磁力，已加入忽略列表")
 
     folder_id = push_service.default_folder_id(user_cfg)
     folder = push_service.folder_meta(user_cfg, folder_id)
@@ -250,12 +263,13 @@ async def run_replace_job_events(
     out_q: asyncio.Queue[dict] = asyncio.Queue()
 
     def scan_thread() -> None:
+        ignored_paths = db.list_ignored_missing_paths(user["id"])
         try:
             for event in iter_scan_missing_subs(
                 folders,
                 stop=stop,
                 collect_all=True,
-                ignored_paths=set(),
+                ignored_paths=ignored_paths,
             ):
                 if stop.is_set():
                     loop.call_soon_threadsafe(scan_q.put_nowait, {"type": "cancelled"})

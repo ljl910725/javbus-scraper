@@ -930,7 +930,7 @@ function openNosubReplaceReport(job) {
   if (nosubReplaceReportBody) {
     nosubReplaceReportBody.innerHTML = [
       renderNosubReplaceSection("替换成功", replaced, "没有替换成功的文件"),
-      renderNosubReplaceSection("没有找到字幕", notFound, "没有未找到字幕的文件"),
+      renderNosubReplaceSection("没有找到字幕（已加入忽略列表）", notFound, "没有未找到字幕的文件"),
       renderNosubReplaceSection("推送失败", pushFailed, "没有推送失败的文件"),
       renderNosubReplaceSection("其他失败", errors, "没有其他失败"),
     ].join("");
@@ -1157,7 +1157,7 @@ async function runNosubReplace() {
   const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
   const ok = await showAppConfirm({
     title: "一键替换无字幕文件",
-    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n扫到一个就会马上查询字幕并推送到 ${nosubPushLabel()}，不用等全部扫完。没找到就跳过。同一文件夹 5 分钟内不能再执行一次。`,
+    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n扫到一个就会马上查询字幕并推送到 ${nosubPushLabel()}。忽略列表里的文件会跳过；没找到字幕的会加入忽略列表。同一文件夹 5 分钟内不能再执行一次。`,
     confirmText: "开始替换",
     danger: true,
   });
@@ -1271,7 +1271,7 @@ async function runNosubReplace() {
         nosubReplaceLiveState.text = nosubReplaceLiveSummary();
         renderNosubReplaceLive();
         setNosubStatus(nosubReplaceLiveState.text, false, true);
-        if (event.status === "replaced") {
+        if (event.status === "replaced" || event.status === "not_found") {
           removeNosubItemFromView(event.path);
         }
         return;

@@ -287,13 +287,14 @@ def add_ignored_missing_sub(
     title: str = "",
     size: str = "",
     parent_dir: str = "",
+    message: str = "",
 ) -> dict:
     with get_connection() as conn:
         conn.execute(
             """
             INSERT INTO ignored_missing_subs (
-                user_id, path, name, code, part, title, size, parent_dir, status
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ignored')
+                user_id, path, name, code, part, title, size, parent_dir, status, message
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ignored', ?)
             ON CONFLICT(user_id, path) DO UPDATE SET
                 name = excluded.name,
                 code = excluded.code,
@@ -304,7 +305,7 @@ def add_ignored_missing_sub(
                 status = 'ignored',
                 magnet_link = '',
                 magnet_title = '',
-                message = '',
+                message = excluded.message,
                 replaced_at = NULL
             """,
             (
@@ -316,6 +317,7 @@ def add_ignored_missing_sub(
                 title or "",
                 size or "",
                 parent_dir or "",
+                message or "",
             ),
         )
         conn.commit()
