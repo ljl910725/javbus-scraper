@@ -391,7 +391,7 @@ function renderListBadges(item) {
   return badges.join("");
 }
 
-function renderListItem(item) {
+function renderListItem(item, extraActions = "") {
   const coverUrl = item.cover_url || "";
   const coverHtml = coverUrl
     ? renderPrivacyImage(coverUrl, item.source_url, item.code, 0, { compact: true })
@@ -415,6 +415,7 @@ function renderListItem(item) {
           ? `<button class="push-115-btn ghost-btn" data-code="${escapeHtml(item.code)}" data-link="${escapeHtml(item.best_magnet_link || "")}" type="button">推送115</button>`
           : ""
       }
+      ${extraActions}
       <button class="subtitle-open-btn ghost-btn" data-code="${escapeHtml(item.code)}" type="button">字幕</button>
     </div>`;
   return `

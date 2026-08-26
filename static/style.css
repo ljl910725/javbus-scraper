@@ -1274,8 +1274,11 @@ button:disabled {
   margin-bottom: 0.75rem;
 }
 
-.modal-header h2 {
-  margin: 0;
+.modal-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  flex-shrink: 0;
 }
 
 .modal-card label {

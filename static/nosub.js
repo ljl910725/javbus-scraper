@@ -22,6 +22,7 @@ const nosubLookupHint = document.getElementById("nosubLookupHint");
 const nosubLookupStatusEl = document.getElementById("nosubLookupStatus");
 const nosubLookupResults = document.getElementById("nosubLookupResults");
 const closeNosubLookupModalBtn = document.getElementById("closeNosubLookupModalBtn");
+const nosubLookupIgnoreBtn = document.getElementById("nosubLookupIgnoreBtn");
 const nosubPageSizeSelect = document.getElementById("nosubPageSizeSelect");
 const nosubPagerEl = document.getElementById("nosubPager");
 const nosubViewScanBtn = document.getElementById("nosubViewScanBtn");
@@ -521,6 +522,7 @@ async function ignoreNosubFile(button, item) {
     }
     removeNosubItemFromView(item.path);
     setNosubStatus(`已忽略 ${item.name || item.code || "该文件"}`);
+    closeNosubLookupModal();
   } catch (err) {
     setNosubStatus(err.message || "忽略失败", true);
     if (button) button.disabled = false;
@@ -689,6 +691,7 @@ async function deleteNosubOriginal(item) {
 
 function closeNosubLookupModal() {
   nosubLookupModal?.classList.add("hidden");
+  nosubLookupIgnoreBtn?.classList.add("hidden");
   pendingNosubItem = null;
   nosubLookupList = [];
   if (nosubLookupResults) nosubLookupResults.innerHTML = "";
@@ -712,11 +715,17 @@ async function fuzzySearchCode(code) {
   return data.results || [];
 }
 
+function nosubLookupIgnoreButton() {
+  return '<button class="nosub-lookup-ignore-btn ghost-btn" type="button">忽略</button>';
+}
+
 function renderNosubLookupList(results) {
   nosubLookupList = results;
-  nosubLookupResults.innerHTML = `<div class="fuzzy-results">${results.map(renderListItem).join("")}</div>`;
+  nosubLookupResults.innerHTML = `<div class="fuzzy-results">${results
+    .map((item) => renderListItem(item, nosubLookupIgnoreButton()))
+    .join("")}</div>`;
   setNosubLookupStatus(
-    `找到 ${results.length} 条，点击条目查看详情。可直接复制或推送，推送成功后会删除原文件。`
+    `找到 ${results.length} 条，点击条目查看详情。可直接复制或推送，推送成功后会删除原文件。也可以忽略当前无字幕文件。`
   );
 }
 
@@ -747,6 +756,7 @@ async function lookupNosubItem(item) {
   nosubLookupHint.textContent = `原文件：${item.name}`;
   nosubLookupResults.innerHTML = "";
   nosubLookupModal.classList.remove("hidden");
+  nosubLookupIgnoreBtn?.classList.remove("hidden");
 
   const queries = nosubQueryCodes(code);
   let lastError = "";
@@ -815,6 +825,9 @@ nosubCancelBtn?.addEventListener("click", () => {
 });
 closeNosubFolderModalBtn?.addEventListener("click", closeNosubFolderModal);
 closeNosubLookupModalBtn?.addEventListener("click", closeNosubLookupModal);
+nosubLookupIgnoreBtn?.addEventListener("click", (event) => {
+  if (pendingNosubItem) ignoreNosubFile(event.currentTarget, pendingNosubItem);
+});
 nosubFolderUpBtn?.addEventListener("click", () => {
   if (nosubBrowseParent === null) return;
   loadNosubFolders(nosubBrowseParent);
@@ -879,6 +892,12 @@ nosubResultsEl?.addEventListener("click", (event) => {
 });
 
 nosubLookupResults?.addEventListener("click", async (event) => {
+  const ignoreBtn = event.target.closest(".nosub-lookup-ignore-btn");
+  if (ignoreBtn) {
+    event.stopPropagation();
+    if (pendingNosubItem) ignoreNosubFile(ignoreBtn, pendingNosubItem);
+    return;
+  }
   if (event.target.closest(".nosub-back-list-btn")) {
     renderNosubLookupList(nosubLookupList);
     return;
