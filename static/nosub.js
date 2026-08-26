@@ -523,7 +523,7 @@ async function ignoreNosubFile(button, item) {
   if (!item?.path) return;
   const ok = await showAppConfirm({
     title: "忽略这个文件",
-    message: `忽略后下次排查不再显示这个文件。\n每天凌晨 4 点会搜索带字幕版本，找到后推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`,
+    message: `忽略后下次排查不再显示这个文件。\n可在忽略列表里手动检查带字幕版本，找到后会推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`,
     confirmText: "忽略",
   });
   if (!ok) return;

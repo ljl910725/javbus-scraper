@@ -1,9 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import logging
-from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo
 
 from app import db
 from app.config import settings
@@ -14,21 +11,7 @@ from app.models import MagnetLink
 from app.scraper.service import ScrapeError, scrape_movie
 from app.user_settings import merge_settings
 
-logger = logging.getLogger(__name__)
-try:
-    _SHANGHAI = ZoneInfo("Asia/Shanghai")
-except Exception:
-    _SHANGHAI = timezone(timedelta(hours=8))
 _job_lock = asyncio.Lock()
-
-
-def seconds_until_hour(hour: int) -> float:
-    now = datetime.now(_SHANGHAI)
-    target_hour = max(0, min(int(hour), 23))
-    target = now.replace(hour=target_hour, minute=0, second=0, microsecond=0)
-    if now >= target:
-        target += timedelta(days=1)
-    return max(1.0, (target - now).total_seconds())
 
 
 def pick_subtitle_magnet(magnets: list[MagnetLink] | None) -> MagnetLink | None:
@@ -181,25 +164,3 @@ async def check_pending_ignored(*, user_id: int | None = None, item_id: int | No
             if index < len(items) - 1:
                 await asyncio.sleep(max(1.0, float(settings.request_delay)))
         return results
-
-
-async def run_daily_replace_job() -> list[dict]:
-    logger.info("ignored replace job started")
-    results = await check_pending_ignored()
-    replaced = sum(1 for item in results if item.get("replaced"))
-    logger.info("ignored replace job finished: %s checked, %s replaced", len(results), replaced)
-    return results
-
-
-async def scheduler_loop() -> None:
-    hour = getattr(settings, "ignored_replace_hour", 4)
-    logger.info("ignored replace scheduler waiting for %02d:00 Asia/Shanghai", hour)
-    while True:
-        delay = seconds_until_hour(hour)
-        await asyncio.sleep(delay)
-        try:
-            await run_daily_replace_job()
-        except asyncio.CancelledError:
-            raise
-        except Exception:
-            logger.exception("ignored replace job failed")
