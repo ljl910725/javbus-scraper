@@ -724,6 +724,21 @@ function nosubLookupIgnoreButton() {
   return '<button class="nosub-lookup-ignore-btn ghost-btn" type="button">忽略</button>';
 }
 
+function nosubCodesMatch(a, b) {
+  const left = String(a || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  const right = String(b || "").toUpperCase().replace(/[^A-Z0-9]/g, "");
+  return Boolean(left && left === right);
+}
+
+function patchNosubLookupQuality(results, movie, query) {
+  if (!movie) return results;
+  return results.map((item) =>
+    nosubCodesMatch(item.code, query) || nosubCodesMatch(item.code, movie.code)
+      ? applyMovieQualityToListItem({ ...item }, movie)
+      : item
+  );
+}
+
 function applyMovieQualityToListItem(item, movie) {
   if (!item || !movie) return item;
   const flags = movieToListItem(movie);
@@ -778,6 +793,9 @@ async function lookupNosubItem(item) {
 
   const queries = nosubQueryCodes(code);
   let lastError = "";
+  const movieByQuery = Object.fromEntries(
+    queries.map((query) => [query, loadMovieDetail(query).catch(() => null)])
+  );
   for (const query of queries) {
     setNosubLookupStatus(`正在搜索 ${query}...`, false, true);
     try {
@@ -785,19 +803,11 @@ async function lookupNosubItem(item) {
       if (results.length) {
         nosubLookupTitle.textContent = `查找 ${query}`;
         renderNosubLookupList(results);
-        loadMovieDetail(query)
-          .then((movie) => {
-            if (!movie || nosubLookupList !== results) return;
-            exactMovieCache.set(movie.code, movie);
-            const matchedCode = String(movie.code || query).trim().toUpperCase();
-            const patched = results.map((item) =>
-              String(item.code || "").trim().toUpperCase() === matchedCode
-                ? applyMovieQualityToListItem({ ...item }, movie)
-                : item
-            );
-            renderNosubLookupList(patched);
-          })
-          .catch(() => {});
+        Promise.resolve(movieByQuery[query]).then((movie) => {
+          if (!movie || nosubLookupTitle.textContent !== `查找 ${query}`) return;
+          exactMovieCache.set(movie.code, movie);
+          renderNosubLookupList(patchNosubLookupQuality(results, movie, query));
+        });
         return;
       }
     } catch (err) {

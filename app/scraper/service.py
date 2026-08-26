@@ -277,12 +277,34 @@ async def fuzzy_search_movies(
 
     client = get_client(user_settings)
     search_url = build_fuzzy_search_url(keywords)
-    html, query_magnets = await asyncio.gather(
+    html_or_err, magnets_or_err = await asyncio.gather(
         client.get_text(search_url),
         fetch_article_torrents(keywords),
+        return_exceptions=True,
     )
-    previews = parse_fuzzy_search_page(html, source_url=search_url)
+    query_magnets = magnets_or_err if isinstance(magnets_or_err, list) else []
+    html = html_or_err if isinstance(html_or_err, str) else ""
+    previews = parse_fuzzy_search_page(html, source_url=search_url) if html else []
+    query_code = normalize_code(keywords) or keywords.strip().upper()
+    query_compact = re.sub(r"[^A-Z0-9]", "", query_code)
+    query_flags = quality_flags_from_magnets(query_magnets)
+
     if not previews:
+        if query_magnets and query_code:
+            return [
+                {
+                    "code": query_code,
+                    "title": query_magnets[0].title,
+                    "cover_url": "",
+                    "source_url": "",
+                    "release_date": "",
+                    "has_hd": bool(query_flags.get("has_hd")),
+                    "has_ultra": bool(query_flags.get("has_ultra")),
+                    "has_subtitle": bool(query_flags.get("has_subtitle")),
+                }
+            ]
+        if isinstance(html_or_err, Exception):
+            raise ScrapeError(f"搜索失败: {html_or_err}") from html_or_err
         raise ScrapeError(f"未找到与「{keywords}」相关的影片")
 
     quality_map = await fetch_article_quality_map([item.code for item in previews])
@@ -291,11 +313,14 @@ async def fuzzy_search_movies(
         code_key = normalize_code(item.code) or (item.code or "").upper()
         compact = re.sub(r"[^A-Z0-9]", "", code_key)
         matched = magnets_matching_code(item.code, query_magnets)
-        extra = merge_quality_flags(
+        extra_groups = [
             quality_map.get(code_key) or {},
             quality_map.get(compact) or {},
             quality_flags_from_magnets(matched),
-        )
+        ]
+        if compact and compact == query_compact:
+            extra_groups.append(query_flags)
+        extra = merge_quality_flags(*extra_groups)
         results.append(
             {
                 "code": item.code,

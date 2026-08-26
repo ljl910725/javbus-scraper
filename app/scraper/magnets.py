@@ -151,7 +151,12 @@ def _parse_magnet_row(row, seen: set[str]) -> MagnetLink | None:
     has_subtitle = (
         "subtitle" in classes.lower()
         or "字幕" in row_text
+        or "中字" in row_text
+        or "中文" in row_text
         or "subtitle" in row_html
+        or "glyphicon-flag" in row_html
+        or "btn-warning" in row_html
+        or bool(re.search(r"(?:^|[-_\s])c(?:$|[-_\s])", title, re.IGNORECASE))
     )
 
     return MagnetLink(

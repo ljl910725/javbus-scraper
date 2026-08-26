@@ -76,17 +76,42 @@ class SearchPreview:
 
 def _parse_search_tags(box: Tag) -> dict[str, bool]:
     flags = {"has_hd": False, "has_ultra": False, "has_subtitle": False}
-    for btn in box.select(".item-tag button, .item-tag span"):
-        text = btn.get_text(strip=True)
-        title = btn.get("title", "") or ""
-        combined = f"{text} {title}"
+    tag = box.select_one(".item-tag")
+    tag_html = str(tag).lower() if tag else ""
+    nodes = box.select(".item-tag button, .item-tag span, .item-tag img, .item-tag i")
+    if tag and not nodes:
+        nodes = tag.find_all(True)
 
-        if text == "超清" or "超清" in title or "UHD" in combined.upper() or "4K" in combined.upper():
+    for btn in nodes:
+        text = btn.get_text(strip=True)
+        title = btn.get("title", "") or btn.get("alt", "") or ""
+        classes = " ".join(btn.get("class") or []).lower()
+        combined = f"{text} {title} {classes}"
+
+        if (
+            text == "超清"
+            or "超清" in title
+            or "UHD" in combined.upper()
+            or "4K" in combined.upper()
+        ):
             flags["has_ultra"] = True
-        if text == "高清" or "高清" in combined or "HD" in title.upper():
+        if text == "高清" or "高清" in combined or "HD" in title.upper() or "glyphicon-film" in classes:
             flags["has_hd"] = True
-        if text == "字幕" or "字幕" in combined or "subtitle" in combined.lower():
+        if (
+            text == "字幕"
+            or "字幕" in combined
+            or "subtitle" in combined.lower()
+            or "btn-warning" in classes
+            or "glyphicon-flag" in classes
+        ):
             flags["has_subtitle"] = True
+
+    if "超清" in tag_html or "uhd" in tag_html or "4k" in tag_html:
+        flags["has_ultra"] = True
+    if "高清" in tag_html or "glyphicon-film" in tag_html:
+        flags["has_hd"] = True
+    if "字幕" in tag_html or "subtitle" in tag_html or "glyphicon-flag" in tag_html or "btn-warning" in tag_html:
+        flags["has_subtitle"] = True
     if flags["has_ultra"]:
         flags["has_hd"] = True
     return flags
