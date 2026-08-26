@@ -22,6 +22,8 @@ services:
       JWT_SECRET: change-me-to-a-random-secret
       BASE_URL: https://www.javbus.com
       PUSH_BACKEND: cd2
+      # TORRENTS_API_URL: http://192.168.1.135:8081/api/v1/articles/torrents
+      # TORRENTS_API_KEY: your-api-key
     volumes:
       # 格式：宿主机路径:容器内路径（右侧必须是 /app/...）
       - ./data:/app/data

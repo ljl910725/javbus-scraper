@@ -7,8 +7,9 @@ import httpx
 
 from app.config import settings
 from app.models import MovieInfo
+from app.scraper.article_torrents import fetch_article_torrents
 from app.scraper.client import JavBusClient, get_client
-from app.scraper.magnets import fetch_magnets
+from app.scraper.magnets import fetch_magnets, merge_magnets, sort_magnets
 from app.scraper.parser import (
     ParsedMovie,
     build_detail_url,
@@ -156,6 +157,35 @@ async def _download_cover(
     return str(file_path)
 
 
+async def _scrape_javbus_movie(
+    code: str,
+    *,
+    download_cover: bool = False,
+    client: JavBusClient,
+) -> MovieInfo:
+    parsed = await _resolve_detail(client, code)
+    info = _to_movie_info(parsed)
+    info.magnets = await fetch_magnets(
+        client,
+        gid=parsed.gid,
+        uc=parsed.uc,
+        referer=parsed.source_url,
+    )
+
+    if download_cover and info.cover_url:
+        try:
+            info.cover_path = await _download_cover(
+                client,
+                cover_url=info.cover_url,
+                code=info.code or code,
+                referer=info.source_url,
+            )
+        except Exception:
+            info.cover_path = None
+
+    return info
+
+
 async def scrape_movie(
     code: str,
     *,
@@ -168,29 +198,32 @@ async def scrape_movie(
         raise ScrapeError("番号不能为空")
 
     http_client = client or get_client(user_settings)
-    parsed = await _resolve_detail(http_client, normalized)
-    info = _to_movie_info(parsed)
-
-    magnets = await fetch_magnets(
-        http_client,
-        gid=parsed.gid,
-        uc=parsed.uc,
-        referer=parsed.source_url,
+    javbus_result, extra_magnets = await asyncio.gather(
+        _scrape_javbus_movie(
+            normalized,
+            download_cover=download_cover,
+            client=http_client,
+        ),
+        fetch_article_torrents(normalized),
+        return_exceptions=True,
     )
-    info.magnets = magnets
 
-    if download_cover and info.cover_url:
-        try:
-            info.cover_path = await _download_cover(
-                http_client,
-                cover_url=info.cover_url,
-                code=info.code or normalized,
-                referer=info.source_url,
-            )
-        except Exception:
-            info.cover_path = None
+    torrents = extra_magnets if isinstance(extra_magnets, list) else []
 
-    return info
+    if isinstance(javbus_result, MovieInfo):
+        javbus_result.magnets = merge_magnets(javbus_result.magnets, torrents)
+        return javbus_result
+
+    if torrents:
+        return MovieInfo(
+            code=normalized,
+            title=torrents[0].title,
+            magnets=sort_magnets(torrents),
+        )
+
+    if isinstance(javbus_result, Exception):
+        raise javbus_result
+    raise ScrapeError(f"未找到番号 {code} 的匹配结果")
 
 
 async def scrape_movies_batch(
@@ -213,6 +246,7 @@ async def scrape_movies_batch(
                 normalized,
                 download_cover=download_cover,
                 client=client,
+                user_settings=user_settings,
             )
             results.append(movie)
         except ScrapeError as exc:

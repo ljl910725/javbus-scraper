@@ -7,7 +7,9 @@ class MagnetLink(BaseModel):
     size: str = ""
     date: str = ""
     is_hd: bool = False
+    is_uhd: bool = False
     has_subtitle: bool = False
+    site: str = ""
 
 
 class MovieInfo(BaseModel):

@@ -218,7 +218,7 @@ function movieToListItem(movie) {
     source_url: movie.source_url,
     release_date: movie.release_date,
     has_hd: Boolean(best?.is_hd) || magnets.some((m) => m.is_hd),
-    has_ultra: magnets.some((m) => /超清|4k|uhd/i.test(m.title || "")),
+    has_ultra: magnets.some((m) => m.is_uhd || /超清|4k|uhd/i.test(m.title || "")),
     has_subtitle: Boolean(best?.has_subtitle) || magnets.some((m) => m.has_subtitle),
     best_magnet_link: best?.link || "",
     best_magnet_title: best?.title || "",
@@ -255,7 +255,7 @@ function applyMagnetToListItem(code, magnet) {
   item.best_magnet_title = magnet.title;
   item.has_hd = Boolean(magnet.is_hd) || item.has_hd;
   item.has_subtitle = Boolean(magnet.has_subtitle) || item.has_subtitle;
-  item.has_ultra = item.has_ultra || /超清|4k|uhd/i.test(magnet.title || "");
+  item.has_ultra = item.has_ultra || Boolean(magnet.is_uhd) || /超清|4k|uhd/i.test(magnet.title || "");
   return item.best_magnet_link;
 }
 
@@ -1285,6 +1285,27 @@ async function confirmSubtitleSave() {
   }
 }
 
+function magnetSiteLabel(site) {
+  const raw = (site || "").trim();
+  if (!raw) return "";
+  const labels = { javbus: "JavBus", sehuatang: "色花堂" };
+  return raw
+    .split("/")
+    .map((part) => labels[part.trim().toLowerCase()] || part.trim())
+    .filter(Boolean)
+    .join(" / ");
+}
+
+function renderMagnetBadges(magnet) {
+  const badges = [];
+  const site = magnetSiteLabel(magnet.site);
+  if (site) badges.push(`<span class="badge badge-site">${escapeHtml(site)}</span>`);
+  if (magnet.is_uhd) badges.push('<span class="badge badge-uhd">UHD</span>');
+  else if (magnet.is_hd) badges.push('<span class="badge badge-hd">HD</span>');
+  if (magnet.has_subtitle) badges.push('<span class="badge badge-sub">字幕</span>');
+  return badges.join("");
+}
+
 function renderMovieCard(movie) {
   const gallery = buildMovieGallery(movie);
   const previewCount = (movie.preview_images || []).length;
@@ -1300,10 +1321,9 @@ function renderMovieCard(movie) {
             (m, index) => `
         <div class="magnet-item${index >= MAGNET_PREVIEW_COUNT ? " magnet-item-extra hidden" : ""}">
           <span class="magnet-title" title="${escapeHtml(m.title)}">${escapeHtml(m.title)}</span>
-          <span class="magnet-meta">${escapeHtml(m.size || "")} ${escapeHtml(m.date || "")}</span>
+          <span class="magnet-meta">${escapeHtml(m.size || "")}${m.date ? ` ${escapeHtml(m.date)}` : ""}</span>
           <span class="magnet-badges">
-            ${m.is_hd ? '<span class="badge badge-hd">HD</span>' : ""}
-            ${m.has_subtitle ? '<span class="badge badge-sub">字幕</span>' : ""}
+            ${renderMagnetBadges(m)}
           </span>
           <button class="copy-btn" data-link="${escapeHtml(m.link)}" type="button">复制</button>
           ${pushReady ? `<button class="push-btn" data-link="${escapeHtml(m.link)}" type="button">${pushLabel}</button>` : ""}

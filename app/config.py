@@ -20,6 +20,9 @@ class Settings(BaseSettings):
     request_timeout: float = 30.0
     p115_cookie: str | None = None
 
+    torrents_api_url: str = "http://192.168.1.135:8081/api/v1/articles/torrents"
+    torrents_api_key: str | None = None
+
     push_backend: str = "cd2"
     cd2_host: str = "localhost:19798"
     cd2_auth_mode: str = "password"
