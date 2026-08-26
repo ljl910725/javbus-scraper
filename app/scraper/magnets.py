@@ -8,12 +8,23 @@ from app.scraper.client import JavBusClient
 
 _SIZE_UNITS = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
 _INFOHASH_RE = re.compile(r"btih:([a-zA-Z0-9]+)", re.IGNORECASE)
-_UHD_RE = re.compile(r"超清|4k|uhd", re.IGNORECASE)
+_UHD_RE = re.compile(r"超清|4k|uhd|2160p", re.IGNORECASE)
+UHD_MIN_BYTES = 10 * 1024**3
+UHD_MIN_MB = 10 * 1024
 
 
 def magnet_infohash(link: str) -> str:
     match = _INFOHASH_RE.search(link or "")
     return (match.group(1) if match else "").upper()
+
+
+def size_suggests_uhd(*, size_text: str = "", size_mb: int | float | None = None) -> bool:
+    try:
+        if size_mb is not None and float(size_mb) >= UHD_MIN_MB:
+            return True
+    except (TypeError, ValueError):
+        pass
+    return _size_to_bytes(size_text) >= UHD_MIN_BYTES
 
 
 def format_size_mb(size_mb: int | float | None) -> str:
@@ -129,7 +140,7 @@ def _parse_magnet_row(row, seen: set[str]) -> MagnetLink | None:
         date = date_match.group(1)
 
     classes = " ".join(link_el.get("class", []))
-    is_uhd = bool(_UHD_RE.search(f"{title} {row_text}"))
+    is_uhd = bool(_UHD_RE.search(f"{title} {row_text}")) or size_suggests_uhd(size_text=size)
     is_hd = (
         is_uhd
         or "hd" in classes.lower()

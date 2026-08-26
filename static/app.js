@@ -213,6 +213,21 @@ function magnetHasSubtitle(magnet) {
   );
 }
 
+function parseSizeToBytes(size) {
+  const match = String(size || "").match(/(\d+(?:\.\d+)?)\s*([KMGT]B)/i);
+  if (!match) return 0;
+  const units = { KB: 1024, MB: 1024 ** 2, GB: 1024 ** 3, TB: 1024 ** 4 };
+  return Number(match[1]) * (units[match[2].toUpperCase()] || 0);
+}
+
+function magnetIsUhd(magnet) {
+  return (
+    Boolean(magnet?.is_uhd) ||
+    /超清|4k|uhd|2160p/i.test(magnet?.title || "") ||
+    parseSizeToBytes(magnet?.size) >= 10 * 1024 ** 3
+  );
+}
+
 function movieToListItem(movie) {
   const best = movie.magnets?.[0];
   const magnets = movie.magnets || [];
@@ -224,8 +239,8 @@ function movieToListItem(movie) {
       : movie.cover_url,
     source_url: movie.source_url,
     release_date: movie.release_date,
-    has_hd: magnets.some((m) => m.is_hd || m.is_uhd),
-    has_ultra: magnets.some((m) => m.is_uhd || /超清|4k|uhd/i.test(m.title || "")),
+    has_hd: magnets.some((m) => m.is_hd || magnetIsUhd(m)),
+    has_ultra: magnets.some((m) => magnetIsUhd(m)),
     has_subtitle: magnets.some((m) => magnetHasSubtitle(m)),
     best_magnet_link: best?.link || "",
     best_magnet_title: best?.title || "",
@@ -260,9 +275,9 @@ function applyMagnetToListItem(code, magnet) {
   if (!item || !magnet) return "";
   item.best_magnet_link = magnet.link;
   item.best_magnet_title = magnet.title;
-  item.has_hd = Boolean(magnet.is_hd) || Boolean(magnet.is_uhd) || item.has_hd;
+  item.has_hd = Boolean(magnet.is_hd) || magnetIsUhd(magnet) || item.has_hd;
   item.has_subtitle = magnetHasSubtitle(magnet) || item.has_subtitle;
-  item.has_ultra = item.has_ultra || Boolean(magnet.is_uhd) || /超清|4k|uhd/i.test(magnet.title || "");
+  item.has_ultra = item.has_ultra || magnetIsUhd(magnet);
   return item.best_magnet_link;
 }
 
@@ -1308,7 +1323,7 @@ function renderMagnetBadges(magnet) {
   const badges = [];
   const site = magnetSiteLabel(magnet.site);
   if (site) badges.push(`<span class="badge badge-site">${escapeHtml(site)}</span>`);
-  if (magnet.is_uhd) badges.push('<span class="badge badge-uhd">UHD</span>');
+  if (magnetIsUhd(magnet)) badges.push('<span class="badge badge-uhd">UHD</span>');
   else if (magnet.is_hd) badges.push('<span class="badge badge-hd">HD</span>');
   if (magnetHasSubtitle(magnet)) badges.push('<span class="badge badge-sub">字幕</span>');
   return badges.join("");

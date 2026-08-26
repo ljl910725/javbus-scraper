@@ -724,6 +724,19 @@ function nosubLookupIgnoreButton() {
   return '<button class="nosub-lookup-ignore-btn ghost-btn" type="button">忽略</button>';
 }
 
+function applyMovieQualityToListItem(item, movie) {
+  if (!item || !movie) return item;
+  const flags = movieToListItem(movie);
+  item.has_ultra = Boolean(item.has_ultra || flags.has_ultra);
+  item.has_hd = Boolean(item.has_hd || flags.has_hd || item.has_ultra);
+  item.has_subtitle = Boolean(item.has_subtitle || flags.has_subtitle);
+  if (flags.best_magnet_link && !item.best_magnet_link) {
+    item.best_magnet_link = flags.best_magnet_link;
+    item.best_magnet_title = flags.best_magnet_title;
+  }
+  return item;
+}
+
 function renderNosubLookupList(results) {
   nosubLookupList = results;
   nosubLookupResults.innerHTML = `<div class="fuzzy-results">${results
@@ -772,6 +785,19 @@ async function lookupNosubItem(item) {
       if (results.length) {
         nosubLookupTitle.textContent = `查找 ${query}`;
         renderNosubLookupList(results);
+        loadMovieDetail(query)
+          .then((movie) => {
+            if (!movie || nosubLookupList !== results) return;
+            exactMovieCache.set(movie.code, movie);
+            const matchedCode = String(movie.code || query).trim().toUpperCase();
+            const patched = results.map((item) =>
+              String(item.code || "").trim().toUpperCase() === matchedCode
+                ? applyMovieQualityToListItem({ ...item }, movie)
+                : item
+            );
+            renderNosubLookupList(patched);
+          })
+          .catch(() => {});
         return;
       }
     } catch (err) {

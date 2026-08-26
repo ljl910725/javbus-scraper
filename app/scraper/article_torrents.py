@@ -5,9 +5,10 @@ import httpx
 
 from app.config import settings
 from app.models import MagnetLink
-from app.scraper.magnets import format_size_mb, sort_magnets
+from app.scraper.magnets import format_size_mb, size_suggests_uhd, sort_magnets
 
-_UHD_RE = re.compile(r"4k|uhd|超清", re.IGNORECASE)
+_UHD_RE = re.compile(r"4k|uhd|超清|2160p", re.IGNORECASE)
+_UHD_FLAG_TRUE = {"1", "true", "yes", "y", "uhd", "4k", "ultra", "超清"}
 _SUB_RE = re.compile(
     r"字幕|中字|中文|chs|cht|zh-?cn|chinese|自提征用|(?:^|[-_\s])c(?:$|[-_\s])",
     re.IGNORECASE,
@@ -23,6 +24,15 @@ def _flag_true(value) -> bool:
     return text in {"1", "true", "yes", "y", "cn", "chinese", "zh", "中文"}
 
 
+def _uhd_flag(value) -> bool:
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return value != 0
+    text = str(value or "").strip().lower()
+    return text in _UHD_FLAG_TRUE
+
+
 def title_has_subtitle(title: str) -> bool:
     return bool(_SUB_RE.search(title or ""))
 
@@ -33,7 +43,11 @@ def _item_to_magnet(item: dict) -> MagnetLink | None:
         return None
 
     title = str(item.get("title") or "").strip() or link
-    is_uhd = _flag_true(item.get("uhd")) or bool(_UHD_RE.search(title))
+    is_uhd = (
+        _uhd_flag(item.get("uhd"))
+        or bool(_UHD_RE.search(title))
+        or size_suggests_uhd(size_mb=item.get("size_mb"))
+    )
     has_subtitle = (
         _flag_true(item.get("chinese"))
         or _flag_true(item.get("subtitle"))
