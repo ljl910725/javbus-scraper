@@ -138,9 +138,6 @@ def _list_dir_names(dirpath: str, cache: dict[str, list[str]]) -> list[str]:
     return names
 
 
-_MAX_REPLACE_ITEMS = 2000
-
-
 def iter_scan_missing_subs(
     folders: list[str],
     *,
@@ -154,7 +151,7 @@ def iter_scan_missing_subs(
         raise ValueError("请至少选择一个文件夹")
 
     if collect_all:
-        page_size = max(1, min(int(limit or _MAX_REPLACE_ITEMS), _MAX_REPLACE_ITEMS))
+        page_size = 0
     else:
         page_size = max(1, min(int(limit or 10), 100))
     skip = max(0, int(offset or 0))
@@ -254,7 +251,7 @@ def iter_scan_missing_subs(
                 yield event
             for name in visible:
                 scanned += 1
-                if scanned > _MAX_SCAN_FILES:
+                if not collect_all and scanned > _MAX_SCAN_FILES:
                     truncated = True
                     break
                 if Path(name).suffix.lower() not in VIDEO_EXTENSIONS:
@@ -300,7 +297,7 @@ def iter_scan_missing_subs(
                         "images": _pick_images(dirpath, names, stem),
                     }
                 )
-                if len(items) >= page_size:
+                if page_size and len(items) >= page_size:
                     has_more = True
                     page_full = True
                     break

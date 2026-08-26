@@ -13,7 +13,7 @@ from app.ignored_replace import pick_subtitle_magnet
 from app.integrations import push as push_service
 from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
 from app.integrations.p115 import P115Error, P115NotConfiguredError
-from app.missing_subs import _MAX_REPLACE_ITEMS, iter_scan_missing_subs
+from app.missing_subs import iter_scan_missing_subs
 from app.scraper.article_torrents import fetch_article_torrents
 from app.scraper.service import ScrapeError, scrape_movie
 from app.user_settings import merge_settings
@@ -325,21 +325,6 @@ async def run_replace_job_events(
         recorded = _record_item(
             job_id,
             {"status": "error", "code": "", "name": "", "path": "", "message": message, "magnet_title": ""},
-        )
-        _bump_count("error")
-        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **_counts_payload(), **recorded}
-
-    if meta.get("truncated") or meta.get("has_more"):
-        recorded = _record_item(
-            job_id,
-            {
-                "status": "error",
-                "code": "",
-                "name": "",
-                "path": "",
-                "message": f"扫描达到上限（最多 {_MAX_REPLACE_ITEMS} 个无字幕文件），后续文件未处理",
-                "magnet_title": "",
-            },
         )
         _bump_count("error")
         yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **_counts_payload(), **recorded}
