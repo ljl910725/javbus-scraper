@@ -1,11 +1,13 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
+import asyncio
 
 from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from app.db import init_db
+from app.ignored_replace import scheduler_loop
 from app.routes.api import router as api_router
 from app.routes.auth import router as auth_router
 from app.routes.cleanup import router as cleanup_router
@@ -20,8 +22,16 @@ from app.scraper.client import close_client
 @asynccontextmanager
 async def lifespan(_app: FastAPI):
     init_db()
-    yield
-    await close_client()
+    scheduler_task = asyncio.create_task(scheduler_loop())
+    try:
+        yield
+    finally:
+        scheduler_task.cancel()
+        try:
+            await scheduler_task
+        except asyncio.CancelledError:
+            pass
+        await close_client()
 
 
 app = FastAPI(

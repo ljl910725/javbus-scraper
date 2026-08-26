@@ -138,7 +138,14 @@ def _list_dir_names(dirpath: str, cache: dict[str, list[str]]) -> list[str]:
     return names
 
 
-def iter_scan_missing_subs(folders: list[str], *, stop=None, limit: int = 10, offset: int = 0):
+def iter_scan_missing_subs(
+    folders: list[str],
+    *,
+    stop=None,
+    limit: int = 10,
+    offset: int = 0,
+    ignored_paths: set[str] | None = None,
+):
     if not folders:
         raise ValueError("请至少选择一个文件夹")
 
@@ -156,6 +163,7 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None, limit: int = 10, of
         selected.append(resolved)
 
     dir_cache: dict[str, list[str]] = {}
+    skip_paths = set(ignored_paths or ())
     items: list[dict] = []
     scanned = 0
     videos = 0
@@ -241,6 +249,9 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None, limit: int = 10, of
                 videos += 1
                 if has_c_subtitle(name):
                     continue
+                path = Path(dirpath) / name
+                if str(path) in skip_paths:
+                    continue
                 matched += 1
                 if matched <= skip:
                     continue
@@ -251,7 +262,6 @@ def iter_scan_missing_subs(folders: list[str], *, stop=None, limit: int = 10, of
                     "title": "", "plot": "", "date": "", "studio": "", "actors": [], "num": "",
                 }
                 code = extract_jav_code(name) or extract_jav_code(nfo.get("num") or "") or nfo.get("num") or ""
-                path = Path(dirpath) / name
                 try:
                     stat = path.stat()
                     size = str(stat.st_size)

@@ -24,6 +24,14 @@ const nosubLookupResults = document.getElementById("nosubLookupResults");
 const closeNosubLookupModalBtn = document.getElementById("closeNosubLookupModalBtn");
 const nosubPageSizeSelect = document.getElementById("nosubPageSizeSelect");
 const nosubPagerEl = document.getElementById("nosubPager");
+const nosubViewScanBtn = document.getElementById("nosubViewScanBtn");
+const nosubViewIgnoredBtn = document.getElementById("nosubViewIgnoredBtn");
+const nosubScanView = document.getElementById("nosubScanView");
+const nosubIgnoredView = document.getElementById("nosubIgnoredView");
+const nosubIgnoredRefreshBtn = document.getElementById("nosubIgnoredRefreshBtn");
+const nosubIgnoredCheckBtn = document.getElementById("nosubIgnoredCheckBtn");
+const nosubIgnoredStatusEl = document.getElementById("nosubIgnoredStatus");
+const nosubIgnoredResultsEl = document.getElementById("nosubIgnoredResults");
 
 const NOSUB_PAGE_SIZES = [10, 20, 50, 100];
 let nosubSelectedFolders = [];
@@ -37,6 +45,8 @@ let nosubPage = 1;
 let nosubPageSize = 10;
 let nosubPageCache = new Map();
 let nosubHasMore = false;
+let nosubView = "scan";
+let nosubIgnoredItems = [];
 
 function currentNosubPageSize() {
   const value = Number(nosubPageSizeSelect?.value);
@@ -233,6 +243,7 @@ function renderNosubItem(item) {
         <div class="nosub-filename" title="${escapeAttr(item.path)}">${escapeHtml(item.name)}</div>
         <div class="list-item-actions">
           <button class="nosub-lookup-btn ghost-btn" type="button" data-path="${escapeAttr(item.path)}">查找</button>
+          <button class="nosub-ignore-btn ghost-btn" type="button" data-path="${escapeAttr(item.path)}">忽略</button>
           <button class="danger-btn nosub-delete-btn" type="button" data-path="${escapeAttr(item.path)}" data-name="${escapeAttr(item.name)}">删除</button>
         </div>
       </div>
@@ -477,6 +488,186 @@ async function deleteNosubFile(button, path, name) {
   }
 }
 
+async function ignoreNosubFile(button, item) {
+  if (!isLoggedIn()) {
+    openAuthModal("login");
+    return;
+  }
+  if (!item?.path) return;
+  const ok = window.confirm(
+    `忽略后下次排查不再显示这个文件。\n每天凌晨 4 点会搜索带字幕版本，找到后推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`
+  );
+  if (!ok) return;
+
+  if (button) button.disabled = true;
+  try {
+    const res = await authFetch("/api/missing-subs/ignore", {
+      method: "POST",
+      body: JSON.stringify({
+        path: item.path,
+        name: item.name || "",
+        code: item.code || "",
+        part: item.part || "",
+        title: item.title || "",
+        size: item.size || "",
+        parent_dir: item.parent_dir || "",
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      setNosubStatus(data.detail || "忽略失败", true);
+      if (button) button.disabled = false;
+      return;
+    }
+    removeNosubItemFromView(item.path);
+    setNosubStatus(`已忽略 ${item.name || item.code || "该文件"}`);
+  } catch (err) {
+    setNosubStatus(err.message || "忽略失败", true);
+    if (button) button.disabled = false;
+  }
+}
+
+function setNosubIgnoredStatus(message, isError = false, loading = false) {
+  if (!nosubIgnoredStatusEl) return;
+  nosubIgnoredStatusEl.textContent = message || "";
+  nosubIgnoredStatusEl.classList.toggle("hidden", !message);
+  nosubIgnoredStatusEl.classList.toggle("errors", Boolean(isError));
+  nosubIgnoredStatusEl.classList.toggle("loading", Boolean(loading));
+}
+
+function formatNosubBytes(value) {
+  const size = Number(value);
+  if (!Number.isFinite(size) || size <= 0) return "";
+  if (size >= 1024 ** 3) return `${(size / 1024 ** 3).toFixed(2).replace(/\.?0+$/, "")}GB`;
+  if (size >= 1024 ** 2) return `${(size / 1024 ** 2).toFixed(1).replace(/\.0$/, "")}MB`;
+  return `${Math.round(size / 1024)}KB`;
+}
+
+function setNosubView(view) {
+  nosubView = view === "ignored" ? "ignored" : "scan";
+  nosubScanView?.classList.toggle("hidden", nosubView !== "scan");
+  nosubIgnoredView?.classList.toggle("hidden", nosubView !== "ignored");
+  nosubViewScanBtn?.classList.toggle("active", nosubView === "scan");
+  nosubViewIgnoredBtn?.classList.toggle("active", nosubView === "ignored");
+  if (nosubView === "ignored") loadNosubIgnoredList();
+}
+
+function renderNosubIgnoredItem(item) {
+  const replaced = item.status === "replaced";
+  const codeLabel = item.code || "未识别番号";
+  const partLabel = item.part ? ` · ${item.part}` : "";
+  const title = item.title || item.name || "未知标题";
+  const sizeText = formatNosubBytes(item.size);
+  const statusLabel = replaced ? "已替换" : "等待字幕";
+  const checked = item.last_checked_at ? `上次检查 ${item.last_checked_at}` : "尚未检查";
+  const replacedAt = item.replaced_at ? `替换于 ${item.replaced_at}` : "";
+  return `
+    <article class="fuzzy-item list-item nosub-card nosub-ignored-card${replaced ? " is-replaced" : ""}" data-id="${item.id}">
+      <div class="fuzzy-info">
+        <div class="fuzzy-code-row">
+          ${
+            item.code
+              ? `<span class="fuzzy-code copy-code" data-code="${escapeAttr(item.code)}" title="点击复制番号">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>`
+              : `<span class="fuzzy-code">${escapeHtml(codeLabel)}${escapeHtml(partLabel)}</span>`
+          }
+          <span class="badge ${replaced ? "badge-sub" : "badge-site"}">${statusLabel}</span>
+        </div>
+        <div class="fuzzy-title">${escapeHtml(title)}</div>
+        <div class="nosub-filename" title="${escapeAttr(item.path)}">${escapeHtml(item.name || item.path)}</div>
+        <div class="nosub-ignored-meta">
+          ${sizeText ? `<span>${escapeHtml(sizeText)}</span>` : ""}
+          <span>${escapeHtml(checked)}</span>
+          ${replacedAt ? `<span>${escapeHtml(replacedAt)}</span>` : ""}
+        </div>
+        ${item.magnet_title ? `<div class="nosub-ignored-magnet" title="${escapeAttr(item.magnet_title)}">字幕磁力：${escapeHtml(item.magnet_title)}</div>` : ""}
+        ${item.message ? `<div class="nosub-ignored-message">${escapeHtml(item.message)}</div>` : ""}
+        <div class="list-item-actions">
+          ${
+            replaced
+              ? ""
+              : `<button class="nosub-ignored-check-btn ghost-btn" type="button" data-id="${item.id}">立即检查</button>`
+          }
+          <button class="ghost-btn nosub-unignore-btn" type="button" data-id="${item.id}">${replaced ? "从列表移除" : "取消忽略"}</button>
+        </div>
+      </div>
+    </article>`;
+}
+
+function renderNosubIgnoredList(items) {
+  nosubIgnoredItems = items || [];
+  if (!nosubIgnoredResultsEl) return;
+  if (!nosubIgnoredItems.length) {
+    nosubIgnoredResultsEl.classList.remove("nosub-ignored-list");
+    nosubIgnoredResultsEl.innerHTML = '<p class="folder-empty">还没有忽略的文件</p>';
+    return;
+  }
+  nosubIgnoredResultsEl.classList.add("nosub-ignored-list");
+  nosubIgnoredResultsEl.innerHTML = nosubIgnoredItems.map(renderNosubIgnoredItem).join("");
+}
+
+async function loadNosubIgnoredList() {
+  if (!isLoggedIn()) {
+    setNosubIgnoredStatus("查看忽略列表需要先登录", true);
+    openAuthModal("login");
+    return;
+  }
+  setNosubIgnoredStatus("正在加载忽略列表...", false, true);
+  try {
+    const res = await authFetch("/api/missing-subs/ignored");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "加载失败");
+    const items = data.items || [];
+    const waiting = items.filter((item) => item.status !== "replaced").length;
+    const replaced = items.length - waiting;
+    renderNosubIgnoredList(items);
+    setNosubIgnoredStatus(
+      items.length
+        ? `共 ${items.length} 条，等待 ${waiting} 条，已替换 ${replaced} 条`
+        : "还没有忽略的文件"
+    );
+  } catch (err) {
+    setNosubIgnoredStatus(err.message || "加载失败", true);
+  }
+}
+
+async function unignoreNosubItem(button, itemId) {
+  if (button) button.disabled = true;
+  try {
+    const res = await authFetch(`/api/missing-subs/ignored/${itemId}`, { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "操作失败");
+    nosubIgnoredItems = nosubIgnoredItems.filter((item) => String(item.id) !== String(itemId));
+    renderNosubIgnoredList(nosubIgnoredItems);
+    setNosubIgnoredStatus(`本页剩余 ${nosubIgnoredItems.length} 条忽略记录`);
+  } catch (err) {
+    setNosubIgnoredStatus(err.message || "操作失败", true);
+    if (button) button.disabled = false;
+  }
+}
+
+async function checkNosubIgnored(button, itemId = null) {
+  if (!isLoggedIn()) {
+    openAuthModal("login");
+    return;
+  }
+  if (button) button.disabled = true;
+  setNosubIgnoredStatus(itemId ? "正在检查这一条..." : "正在检查所有等待中的条目...", false, true);
+  try {
+    const res = await authFetch("/api/missing-subs/ignored/check", {
+      method: "POST",
+      body: JSON.stringify(itemId ? { id: Number(itemId) } : {}),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "检查失败");
+    await loadNosubIgnoredList();
+    setNosubIgnoredStatus(data.message || "检查完成");
+  } catch (err) {
+    setNosubIgnoredStatus(err.message || "检查失败", true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 async function deleteNosubOriginal(item) {
   if (!item?.path) return;
   try {
@@ -658,6 +849,13 @@ nosubResultsEl?.addEventListener("click", (event) => {
   if (lookupBtn) {
     const item = findNosubItem(lookupBtn.dataset.path || "");
     if (item) lookupNosubItem(item);
+    return;
+  }
+  const ignoreBtn = event.target.closest(".nosub-ignore-btn");
+  if (ignoreBtn) {
+    event.stopPropagation();
+    const item = findNosubItem(ignoreBtn.dataset.path || "");
+    if (item) ignoreNosubFile(ignoreBtn, item);
     return;
   }
   const deleteBtn = event.target.closest(".nosub-delete-btn");
@@ -857,6 +1055,26 @@ nosubFolderModal?.addEventListener("click", (event) => {
 });
 nosubLookupModal?.addEventListener("click", (event) => {
   if (event.target === nosubLookupModal) closeNosubLookupModal();
+});
+
+nosubViewScanBtn?.addEventListener("click", () => setNosubView("scan"));
+nosubViewIgnoredBtn?.addEventListener("click", () => setNosubView("ignored"));
+nosubIgnoredRefreshBtn?.addEventListener("click", () => loadNosubIgnoredList());
+nosubIgnoredCheckBtn?.addEventListener("click", (event) => {
+  checkNosubIgnored(event.currentTarget);
+});
+nosubIgnoredResultsEl?.addEventListener("click", (event) => {
+  const checkBtn = event.target.closest(".nosub-ignored-check-btn");
+  if (checkBtn) {
+    event.stopPropagation();
+    checkNosubIgnored(checkBtn, checkBtn.dataset.id);
+    return;
+  }
+  const unignoreBtn = event.target.closest(".nosub-unignore-btn");
+  if (unignoreBtn) {
+    event.stopPropagation();
+    unignoreNosubItem(unignoreBtn, unignoreBtn.dataset.id);
+  }
 });
 
 renderNosubSelectedFolders();

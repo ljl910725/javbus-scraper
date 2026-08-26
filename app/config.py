@@ -22,6 +22,7 @@ class Settings(BaseSettings):
 
     torrents_api_url: str = "http://192.168.1.135:8081/api/v1/articles/torrents"
     torrents_api_key: str | None = None
+    ignored_replace_hour: int = 4
 
     push_backend: str = "cd2"
     cd2_host: str = "localhost:19798"

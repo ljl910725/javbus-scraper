@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JavBus 番号爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=2608262" />
+  <link rel="stylesheet" href="/static/style.css?v=2608263" />
 </head>
 <body>
   <div class="container">
@@ -76,7 +76,12 @@
 
     <div id="tabNosub" class="tab-panel hidden" data-tab-panel="nosub">
     <section class="dup-panel">
-      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。</p>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现，每天凌晨 4 点会自动搜索带字幕版本并推送到 115。</p>
+      <div class="nosub-views">
+        <button id="nosubViewScanBtn" class="app-tab active" type="button" data-nosub-view="scan">排查结果</button>
+        <button id="nosubViewIgnoredBtn" class="app-tab" type="button" data-nosub-view="ignored">忽略列表</button>
+      </div>
+      <div id="nosubScanView">
       <div id="nosubSelectedFolders" class="dup-chips"></div>
       <div class="options">
         <button id="nosubAddFolderBtn" class="ghost-btn" type="button">选择文件夹</button>
@@ -104,6 +109,16 @@
       <div id="nosubStatus" class="status hidden"></div>
       <div id="nosubPager" class="list-pagination hidden"></div>
       <div id="nosubResults" class="nosub-results"></div>
+      </div>
+      <div id="nosubIgnoredView" class="hidden">
+        <p class="field-hint">已忽略的无字幕文件。等待中的条目每天凌晨 4 点会搜索带字幕磁力并推送到 115，成功后删除原文件并标记为已替换。</p>
+        <div class="options">
+          <button id="nosubIgnoredRefreshBtn" class="ghost-btn" type="button">刷新列表</button>
+          <button id="nosubIgnoredCheckBtn" type="button">立即检查等待中的条目</button>
+        </div>
+        <div id="nosubIgnoredStatus" class="status hidden"></div>
+        <div id="nosubIgnoredResults" class="nosub-results"></div>
+      </div>
     </section>
     </div>
 
@@ -355,11 +370,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=2608262"></script>
-  <script src="/static/nav.js?v=2608262"></script>
-  <script src="/static/app.js?v=2608262"></script>
-  <script src="/static/duplicates.js?v=2608262"></script>
-  <script src="/static/nosub.js?v=2608262"></script>
-  <script src="/static/cleanup.js?v=2608262"></script>
+  <script src="/static/auth.js?v=2608263"></script>
+  <script src="/static/nav.js?v=2608263"></script>
+  <script src="/static/app.js?v=2608263"></script>
+  <script src="/static/duplicates.js?v=2608263"></script>
+  <script src="/static/nosub.js?v=2608263"></script>
+  <script src="/static/cleanup.js?v=2608263"></script>
 </body>
 </html>

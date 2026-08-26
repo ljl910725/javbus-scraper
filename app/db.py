@@ -49,6 +49,30 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_push_history_user_created
                 ON push_history(user_id, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS ignored_missing_subs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                code TEXT NOT NULL DEFAULT '',
+                part TEXT NOT NULL DEFAULT '',
+                title TEXT NOT NULL DEFAULT '',
+                size TEXT NOT NULL DEFAULT '',
+                parent_dir TEXT NOT NULL DEFAULT '',
+                status TEXT NOT NULL DEFAULT 'ignored',
+                magnet_link TEXT NOT NULL DEFAULT '',
+                magnet_title TEXT NOT NULL DEFAULT '',
+                message TEXT NOT NULL DEFAULT '',
+                last_checked_at TEXT,
+                replaced_at TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE (user_id, path)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_ignored_missing_subs_user_status
+                ON ignored_missing_subs(user_id, status, created_at DESC);
             """
         )
         conn.commit()
@@ -193,3 +217,201 @@ def _push_history_row(row: sqlite3.Row) -> dict:
         "message": row["message"],
         "created_at": row["created_at"],
     }
+
+
+def _ignored_missing_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "path": row["path"],
+        "name": row["name"],
+        "code": row["code"],
+        "part": row["part"],
+        "title": row["title"],
+        "size": row["size"],
+        "parent_dir": row["parent_dir"],
+        "status": row["status"] or "ignored",
+        "magnet_link": row["magnet_link"],
+        "magnet_title": row["magnet_title"],
+        "message": row["message"],
+        "last_checked_at": row["last_checked_at"] or "",
+        "replaced_at": row["replaced_at"] or "",
+        "created_at": row["created_at"] or "",
+        "user_id": row["user_id"],
+    }
+
+
+def add_ignored_missing_sub(
+    user_id: int,
+    *,
+    path: str,
+    name: str = "",
+    code: str = "",
+    part: str = "",
+    title: str = "",
+    size: str = "",
+    parent_dir: str = "",
+) -> dict:
+    with get_connection() as conn:
+        conn.execute(
+            """
+            INSERT INTO ignored_missing_subs (
+                user_id, path, name, code, part, title, size, parent_dir, status
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'ignored')
+            ON CONFLICT(user_id, path) DO UPDATE SET
+                name = excluded.name,
+                code = excluded.code,
+                part = excluded.part,
+                title = excluded.title,
+                size = excluded.size,
+                parent_dir = excluded.parent_dir,
+                status = 'ignored',
+                magnet_link = '',
+                magnet_title = '',
+                message = '',
+                replaced_at = NULL
+            """,
+            (
+                user_id,
+                path,
+                name or "",
+                code or "",
+                part or "",
+                title or "",
+                size or "",
+                parent_dir or "",
+            ),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM ignored_missing_subs WHERE user_id = ? AND path = ?",
+            (user_id, path),
+        ).fetchone()
+        return _ignored_missing_row(row)
+
+
+def get_ignored_missing_sub(item_id: int, user_id: int | None = None) -> dict | None:
+    with get_connection() as conn:
+        if user_id is None:
+            row = conn.execute(
+                "SELECT * FROM ignored_missing_subs WHERE id = ?",
+                (item_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM ignored_missing_subs WHERE id = ? AND user_id = ?",
+                (item_id, user_id),
+            ).fetchone()
+        return _ignored_missing_row(row) if row else None
+
+
+def list_ignored_missing_subs(user_id: int) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM ignored_missing_subs
+            WHERE user_id = ?
+            ORDER BY CASE status WHEN 'ignored' THEN 0 ELSE 1 END,
+                     datetime(created_at) DESC, id DESC
+            """,
+            (user_id,),
+        ).fetchall()
+        return [_ignored_missing_row(row) for row in rows]
+
+
+def list_ignored_missing_paths(user_id: int) -> set[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT path FROM ignored_missing_subs WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        return {row["path"] for row in rows if row["path"]}
+
+
+def list_pending_ignored_missing_subs(user_id: int | None = None) -> list[dict]:
+    with get_connection() as conn:
+        if user_id is None:
+            rows = conn.execute(
+                """
+                SELECT * FROM ignored_missing_subs
+                WHERE status = 'ignored'
+                ORDER BY user_id, id
+                """
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT * FROM ignored_missing_subs
+                WHERE user_id = ? AND status = 'ignored'
+                ORDER BY id
+                """,
+                (user_id,),
+            ).fetchall()
+        return [_ignored_missing_row(row) for row in rows]
+
+
+def delete_ignored_missing_sub(item_id: int, user_id: int) -> bool:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM ignored_missing_subs WHERE id = ? AND user_id = ?",
+            (item_id, user_id),
+        )
+        conn.commit()
+        return cursor.rowcount > 0
+
+
+def update_ignored_missing_sub(
+    item_id: int,
+    *,
+    status: str | None = None,
+    magnet_link: str | None = None,
+    magnet_title: str | None = None,
+    message: str | None = None,
+    mark_checked: bool = False,
+    mark_replaced: bool = False,
+) -> dict | None:
+    assignments = []
+    values: list = []
+    if status is not None:
+        assignments.append("status = ?")
+        values.append(status)
+    if magnet_link is not None:
+        assignments.append("magnet_link = ?")
+        values.append(magnet_link)
+    if magnet_title is not None:
+        assignments.append("magnet_title = ?")
+        values.append(magnet_title)
+    if message is not None:
+        assignments.append("message = ?")
+        values.append(message)
+    if mark_checked:
+        assignments.append("last_checked_at = datetime('now')")
+    if mark_replaced:
+        assignments.append("status = 'replaced'")
+        assignments.append("replaced_at = datetime('now')")
+        assignments.append("last_checked_at = datetime('now')")
+    if not assignments:
+        return get_ignored_missing_sub(item_id)
+    values.append(item_id)
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE ignored_missing_subs SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM ignored_missing_subs WHERE id = ?",
+            (item_id,),
+        ).fetchone()
+        return _ignored_missing_row(row) if row else None
+
+
+def list_user_ids_with_pending_ignored() -> list[int]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT DISTINCT user_id FROM ignored_missing_subs
+            WHERE status = 'ignored'
+            ORDER BY user_id
+            """
+        ).fetchall()
+        return [int(row["user_id"]) for row in rows]

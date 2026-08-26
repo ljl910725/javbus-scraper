@@ -421,3 +421,54 @@ class MissingSubScanResponse(BaseModel):
     limit: int = 10
     has_more: bool = False
     truncated: bool = False
+
+
+class IgnoreMissingSubRequest(BaseModel):
+    path: str
+    name: str = ""
+    code: str = ""
+    part: str = ""
+    title: str = ""
+    size: str = ""
+    parent_dir: str = ""
+
+
+class IgnoredMissingSubItem(BaseModel):
+    id: int
+    path: str
+    name: str = ""
+    code: str = ""
+    part: str = ""
+    title: str = ""
+    size: str = ""
+    parent_dir: str = ""
+    status: str = "ignored"
+    magnet_link: str = ""
+    magnet_title: str = ""
+    message: str = ""
+    last_checked_at: str = ""
+    replaced_at: str = ""
+    created_at: str = ""
+
+
+class IgnoredMissingSubListResponse(BaseModel):
+    items: list[IgnoredMissingSubItem] = Field(default_factory=list)
+
+
+class IgnoredMissingSubCheckRequest(BaseModel):
+    id: int | None = None
+
+
+class IgnoredMissingSubCheckItemResult(BaseModel):
+    id: int
+    code: str = ""
+    path: str = ""
+    status: str = ""
+    replaced: bool = False
+    message: str = ""
+
+
+class IgnoredMissingSubCheckResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    results: list[IgnoredMissingSubCheckItemResult] = Field(default_factory=list)
