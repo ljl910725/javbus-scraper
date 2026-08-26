@@ -385,6 +385,22 @@ async def run_replace_job_events(
     error_message = ""
     worker_tasks: list[asyncio.Task] = []
     pump_task: asyncio.Task | None = None
+    job_saved = False
+
+    def save_job(status: str, message: str = "") -> dict | None:
+        nonlocal job_saved
+        if job_saved:
+            return db.get_nosub_replace_job(job_id, user["id"])
+        job_saved = True
+        return db.update_nosub_replace_job(
+            job_id,
+            status=status,
+            scanned=int(meta.get("scanned") or 0),
+            videos=int(meta.get("videos") or 0),
+            total=found_total,
+            message=message,
+            mark_finished=True,
+        )
 
     try:
         async with _job_lock:
@@ -394,11 +410,12 @@ async def run_replace_job_events(
             while True:
                 if await request_disconnected():
                     stop.set()
+                    finished_kind = finished_kind or "interrupted"
                 try:
                     msg = await asyncio.wait_for(out_q.get(), timeout=0.4)
                 except asyncio.TimeoutError:
                     if stop.is_set() and pump_task and pump_task.done() and all(task.done() for task in worker_tasks):
-                        finished_kind = finished_kind or "cancelled"
+                        finished_kind = finished_kind or "interrupted"
                         break
                     continue
                 kind = msg.get("kind")
@@ -492,6 +509,13 @@ async def run_replace_job_events(
                     meta = msg.get("meta") or meta
                     finished_kind = "done"
                     break
+    except (asyncio.CancelledError, GeneratorExit):
+        finished_kind = finished_kind or "interrupted"
+        raise
+    except Exception as exc:
+        logger.exception("replace job failed")
+        finished_kind = "error"
+        error_message = str(exc) or "任务失败"
     finally:
         stop.set()
         if pump_task:
@@ -499,42 +523,27 @@ async def run_replace_job_events(
         for task in worker_tasks:
             task.cancel()
         await asyncio.gather(*([pump_task] if pump_task else []), *worker_tasks, return_exceptions=True)
+        if finished_kind == "cancelled":
+            save_job("cancelled", f"已取消，处理到 {processed}/{found_total}")
+        elif finished_kind == "error":
+            if error_message:
+                db.add_nosub_replace_item(job_id, status="error", message=error_message)
+            save_job("error", error_message or "任务失败")
+        elif finished_kind == "done":
+            if found_total == 0 and processed == 0:
+                save_job("done", "没有找到无字幕文件")
+            else:
+                save_job("done", "")
+        else:
+            save_job("interrupted", f"任务中断，已处理 {processed}/{found_total}")
 
     if finished_kind == "cancelled":
-        db.update_nosub_replace_job(
-            job_id,
-            status="cancelled",
-            message=f"已取消，处理到 {processed}/{found_total}",
-            mark_finished=True,
-        )
         yield {"type": "cancelled", "job_id": job_id, "index": processed, "total": found_total}
         return
     if finished_kind == "error":
-        db.add_nosub_replace_item(job_id, status="error", message=error_message)
-        db.update_nosub_replace_job(job_id, status="error", message=error_message, mark_finished=True)
-        yield {"type": "error", "message": error_message, "job_id": job_id}
+        yield {"type": "error", "message": error_message or "任务失败", "job_id": job_id}
         return
-
-    if found_total == 0 and processed == 0:
-        db.update_nosub_replace_job(
-            job_id,
-            status="done",
-            scanned=int(meta.get("scanned") or 0),
-            videos=int(meta.get("videos") or 0),
-            total=0,
-            message="没有找到无字幕文件",
-            mark_finished=True,
-        )
-        yield {"type": "done", "job_id": job_id, "job": db.get_nosub_replace_job(job_id, user["id"])}
+    if finished_kind == "interrupted":
+        yield {"type": "cancelled", "job_id": job_id, "index": processed, "total": found_total}
         return
-
-    finished = db.update_nosub_replace_job(
-        job_id,
-        status="done",
-        scanned=int(meta.get("scanned") or 0),
-        videos=int(meta.get("videos") or 0),
-        total=found_total,
-        message="",
-        mark_finished=True,
-    )
-    yield {"type": "done", "job_id": job_id, "job": finished}
+    yield {"type": "done", "job_id": job_id, "job": db.get_nosub_replace_job(job_id, user["id"])}

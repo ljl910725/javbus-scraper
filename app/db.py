@@ -113,6 +113,7 @@ def init_db() -> None:
             """
         )
         conn.commit()
+    close_stale_nosub_replace_jobs()
 
 
 def create_user(username: str, email: str, password_hash: str) -> dict:
@@ -602,6 +603,22 @@ def update_nosub_replace_job(
         )
         conn.commit()
     return get_nosub_replace_job(job_id)
+
+
+def close_stale_nosub_replace_jobs(*, message: str = "服务中断，任务未完成") -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            UPDATE nosub_replace_jobs
+            SET status = 'interrupted',
+                message = ?,
+                finished_at = datetime('now')
+            WHERE status = 'running'
+            """,
+            (message,),
+        )
+        conn.commit()
+        return int(cursor.rowcount or 0)
 
 
 def get_nosub_replace_job(job_id: int, user_id: int | None = None) -> dict | None:

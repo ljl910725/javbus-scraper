@@ -892,6 +892,7 @@ function nosubReplaceStatusLabel(status) {
     running: "进行中",
     done: "已完成",
     cancelled: "已取消",
+    interrupted: "已中断",
   }[status] || status || "未知";
 }
 
@@ -954,7 +955,7 @@ function renderNosubReplaceLogs(jobs) {
         <div class="fuzzy-info">
           <div class="fuzzy-code-row">
             <span class="fuzzy-code">记录 #${job.id}</span>
-            <span class="badge ${job.status === "done" ? "badge-sub" : "badge-site"}">${escapeHtml(nosubReplaceStatusLabel(job.status))}</span>
+            <span class="badge ${job.status === "done" ? "badge-sub" : job.status === "interrupted" || job.status === "error" ? "badge-fail" : "badge-site"}">${escapeHtml(nosubReplaceStatusLabel(job.status))}</span>
           </div>
           <div class="fuzzy-title">${escapeHtml(job.message || "一键替换")}</div>
           <div class="nosub-log-counts">
@@ -1012,6 +1013,7 @@ function nosubReplaceBadgeClass(status) {
     running: "badge-site",
     done: "badge-sub",
     cancelled: "badge-site",
+    interrupted: "badge-fail",
   }[status] || "badge-site";
 }
 
