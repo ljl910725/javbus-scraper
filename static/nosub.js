@@ -1030,12 +1030,25 @@ function resetNosubReplaceLive() {
     percent: 0,
     indeterminate: true,
     counts: { replaced_count: 0, not_found_count: 0, push_failed_count: 0, error_count: 0 },
-    pending: null,
+    pending: [],
+    scanning: true,
     items: [],
   };
   nosubReplaceLiveDetailBtn?.classList.add("hidden");
   nosubReplaceLiveEl?.classList.remove("is-done", "is-error");
   renderNosubReplaceLive();
+}
+
+function nosubReplaceLiveSummary() {
+  const state = nosubReplaceLiveState;
+  if (!state) return "";
+  const found = state.total || 0;
+  const done = state.index || 0;
+  const scanBit = state.scanning
+    ? `扫描中 · 已扫 ${state.scanned || 0} 项 · 视频 ${state.videos || 0} 个 · 发现 ${found} 个无字幕`
+    : `扫描结束 · 共 ${found} 个无字幕`;
+  const procBit = found || done ? `已处理 ${done}/${found}` : "等待发现文件";
+  return `${scanBit} · ${procBit} · 成功 ${state.counts.replaced_count || 0} · 未找到 ${state.counts.not_found_count || 0} · 失败 ${(state.counts.push_failed_count || 0) + (state.counts.error_count || 0)}`;
 }
 
 function updateNosubReplaceLiveCounts(event) {
@@ -1076,13 +1089,12 @@ function renderNosubReplaceLive() {
   if (nosubReplaceLivePath) nosubReplaceLivePath.textContent = state.path ? `当前：${state.path}` : "";
   if (nosubReplaceLiveList) {
     const rows = [];
-    if (state.pending) {
-      rows.push(renderNosubReplaceLiveItem(state.pending, true));
-    }
+    const pending = Array.isArray(state.pending) ? state.pending : state.pending ? [state.pending] : [];
+    pending.forEach((item) => rows.push(renderNosubReplaceLiveItem(item, true)));
     state.items.forEach((item) => rows.push(renderNosubReplaceLiveItem(item, false)));
     nosubReplaceLiveList.innerHTML = rows.length
       ? rows.join("")
-      : '<p class="nosub-report-empty">还没有处理结果，扫描完成后会逐条显示</p>';
+      : '<p class="nosub-report-empty">扫到无字幕文件后会立刻查询并显示结果</p>';
   }
 }
 
@@ -1107,7 +1119,7 @@ function finishNosubReplaceLive(status, text, job = null) {
   nosubReplaceLiveState.phase = "done";
   nosubReplaceLiveState.indeterminate = false;
   nosubReplaceLiveState.percent = status === "done" ? 100 : nosubReplaceLiveState.percent;
-  nosubReplaceLiveState.pending = null;
+  nosubReplaceLiveState.pending = [];
   nosubReplaceLiveState.path = "";
   nosubReplaceLiveState.title =
     status === "done" ? "一键替换完成" : status === "cancelled" ? "一键替换已取消" : "一键替换失败";
@@ -1145,7 +1157,7 @@ async function runNosubReplace() {
   const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
   const ok = await showAppConfirm({
     title: "一键替换无字幕文件",
-    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 ${nosubPushLabel()} 并删除现在的文件；没找到就跳过。同一文件夹 5 分钟内不能再执行一次。页面会实时显示每个文件的处理结果。`,
+    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n扫到一个就会马上查询字幕并推送到 ${nosubPushLabel()}，不用等全部扫完。没找到就跳过。同一文件夹 5 分钟内不能再执行一次。`,
     confirmText: "开始替换",
     danger: true,
   });
@@ -1180,59 +1192,72 @@ async function runNosubReplace() {
         return;
       }
       if (event.type === "progress") {
-        nosubReplaceLiveState.phase = "scan";
-        nosubReplaceLiveState.scanned = event.scanned || 0;
-        nosubReplaceLiveState.videos = event.videos || 0;
-        nosubReplaceLiveState.path = event.current_dir || "";
-        nosubReplaceLiveState.indeterminate = true;
-        nosubReplaceLiveState.text = `正在扫描目录 · 已扫 ${event.scanned || 0} 项 · 视频 ${event.videos || 0} 个 · 无字幕 ${event.found || event.page_found || 0} 个`;
+        nosubReplaceLiveState.scanning = event.scanning !== false;
+        nosubReplaceLiveState.scanned = event.scanned || nosubReplaceLiveState.scanned;
+        nosubReplaceLiveState.videos = event.videos || nosubReplaceLiveState.videos;
+        nosubReplaceLiveState.total = Math.max(nosubReplaceLiveState.total || 0, event.found || event.page_found || 0);
+        nosubReplaceLiveState.path = event.current_dir || nosubReplaceLiveState.path;
+        nosubReplaceLiveState.indeterminate = Boolean(nosubReplaceLiveState.scanning);
+        nosubReplaceLiveState.text = nosubReplaceLiveSummary();
         renderNosubReplaceLive();
         setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
       if (event.type === "scan_done") {
         updateNosubReplaceLiveCounts(event);
-        nosubReplaceLiveState.phase = "replace";
-        nosubReplaceLiveState.total = event.total || 0;
-        nosubReplaceLiveState.scanned = event.scanned || 0;
-        nosubReplaceLiveState.videos = event.videos || 0;
-        nosubReplaceLiveState.indeterminate = !event.total;
-        nosubReplaceLiveState.percent = event.total ? 2 : 100;
+        nosubReplaceLiveState.scanning = false;
+        nosubReplaceLiveState.total = event.total || nosubReplaceLiveState.total;
+        nosubReplaceLiveState.scanned = event.scanned || nosubReplaceLiveState.scanned;
+        nosubReplaceLiveState.videos = event.videos || nosubReplaceLiveState.videos;
+        nosubReplaceLiveState.indeterminate = false;
+        nosubReplaceLiveState.percent = nosubReplaceLiveState.total
+          ? Math.min(99, Math.round(((nosubReplaceLiveState.index || 0) / nosubReplaceLiveState.total) * 100))
+          : 100;
         nosubReplaceLiveState.path = "";
-        nosubReplaceLiveState.text = event.total
-          ? `扫描完成，开始处理 ${event.total} 个无字幕文件`
+        nosubReplaceLiveState.text = nosubReplaceLiveState.total
+          ? nosubReplaceLiveSummary()
           : "扫描完成，没有找到无字幕文件";
         renderNosubReplaceLive();
         setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
       if (event.type === "item_start") {
-        nosubReplaceLiveState.phase = "replace";
-        nosubReplaceLiveState.index = event.index || 0;
-        nosubReplaceLiveState.total = event.total || nosubReplaceLiveState.total;
-        nosubReplaceLiveState.indeterminate = false;
+        nosubReplaceLiveState.scanning = event.scanning !== false;
+        nosubReplaceLiveState.total = Math.max(nosubReplaceLiveState.total || 0, event.found || event.total || 0);
+        nosubReplaceLiveState.scanned = event.scanned || nosubReplaceLiveState.scanned;
+        nosubReplaceLiveState.videos = event.videos || nosubReplaceLiveState.videos;
+        nosubReplaceLiveState.path = event.path || nosubReplaceLiveState.path;
+        nosubReplaceLiveState.indeterminate = Boolean(nosubReplaceLiveState.scanning);
         nosubReplaceLiveState.percent = nosubReplaceLiveState.total
-          ? Math.min(99, Math.round(((event.index - 1) / nosubReplaceLiveState.total) * 100))
-          : 50;
-        nosubReplaceLiveState.path = event.path || "";
-        nosubReplaceLiveState.pending = {
+          ? Math.min(99, Math.round(((nosubReplaceLiveState.index || 0) / nosubReplaceLiveState.total) * 100))
+          : 8;
+        const pendingItem = {
           status: "pending",
           code: event.code || "",
           name: event.name || "",
           path: event.path || "",
           message: `正在查询字幕并推送到 ${nosubPushLabel()}`,
         };
-        nosubReplaceLiveState.text = `正在处理 ${event.index}/${event.total} ${event.code || event.name || ""}`;
+        nosubReplaceLiveState.pending = [
+          pendingItem,
+          ...(Array.isArray(nosubReplaceLiveState.pending) ? nosubReplaceLiveState.pending : []).filter(
+            (item) => item.path !== pendingItem.path
+          ),
+        ].slice(0, 8);
+        nosubReplaceLiveState.text = nosubReplaceLiveSummary();
         renderNosubReplaceLive();
         setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
       if (event.type === "item") {
         updateNosubReplaceLiveCounts(event);
-        nosubReplaceLiveState.pending = null;
+        nosubReplaceLiveState.scanning = event.scanning === true;
+        nosubReplaceLiveState.pending = (Array.isArray(nosubReplaceLiveState.pending) ? nosubReplaceLiveState.pending : []).filter(
+          (item) => item.path !== event.path
+        );
         nosubReplaceLiveState.index = event.index || nosubReplaceLiveState.index;
-        nosubReplaceLiveState.total = event.total || nosubReplaceLiveState.total;
-        nosubReplaceLiveState.indeterminate = false;
+        nosubReplaceLiveState.total = Math.max(nosubReplaceLiveState.total || 0, event.total || 0);
+        nosubReplaceLiveState.indeterminate = Boolean(nosubReplaceLiveState.scanning);
         nosubReplaceLiveState.percent = nosubReplaceLiveState.total
           ? Math.min(99, Math.round((nosubReplaceLiveState.index / nosubReplaceLiveState.total) * 100))
           : 100;
@@ -1243,7 +1268,7 @@ async function runNosubReplace() {
           path: event.path || "",
           message: event.message || "",
         });
-        nosubReplaceLiveState.text = `已处理 ${nosubReplaceLiveState.index}/${nosubReplaceLiveState.total} · 成功 ${nosubReplaceLiveState.counts.replaced_count} · 未找到 ${nosubReplaceLiveState.counts.not_found_count} · 失败 ${nosubReplaceLiveState.counts.push_failed_count + nosubReplaceLiveState.counts.error_count}`;
+        nosubReplaceLiveState.text = nosubReplaceLiveSummary();
         renderNosubReplaceLive();
         setNosubStatus(nosubReplaceLiveState.text, false, true);
         if (event.status === "replaced") {

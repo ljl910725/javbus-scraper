@@ -20,6 +20,7 @@ from app.user_settings import merge_settings
 
 logger = logging.getLogger(__name__)
 _job_lock = asyncio.Lock()
+REPLACE_WORKERS = 2
 FOLDER_LOCK_SECONDS = 300
 _folder_locks_guard = threading.Lock()
 _folder_locks: dict[tuple[int, str], dict] = {}
@@ -234,7 +235,6 @@ async def run_replace_job_events(
     yield {"type": "job", "job_id": job_id, "job": job}
 
     loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[dict | None] = asyncio.Queue()
     stored = db.get_user_settings(user["id"])
     user_cfg = merge_settings(stored)
     backend = push_service.active_backend(user_cfg)
@@ -245,7 +245,11 @@ async def run_replace_job_events(
         yield {"type": "error", "message": message, "job_id": job_id}
         return
 
-    def worker() -> None:
+    scan_q: asyncio.Queue[dict | None] = asyncio.Queue()
+    work_q: asyncio.Queue[tuple[int, dict] | None] = asyncio.Queue()
+    out_q: asyncio.Queue[dict] = asyncio.Queue()
+
+    def scan_thread() -> None:
         try:
             for event in iter_scan_missing_subs(
                 folders,
@@ -253,53 +257,19 @@ async def run_replace_job_events(
                 collect_all=True,
                 ignored_paths=set(),
             ):
-                loop.call_soon_threadsafe(queue.put_nowait, event)
+                if stop.is_set():
+                    loop.call_soon_threadsafe(scan_q.put_nowait, {"type": "cancelled"})
+                    break
+                loop.call_soon_threadsafe(scan_q.put_nowait, event)
         except ValueError as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
+            loop.call_soon_threadsafe(scan_q.put_nowait, {"type": "error", "message": str(exc)})
         except Exception as exc:
             loop.call_soon_threadsafe(
-                queue.put_nowait,
+                scan_q.put_nowait,
                 {"type": "error", "message": f"遍历文件失败: {exc}"},
             )
         finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
-
-    loop.run_in_executor(None, worker)
-
-    items: list[dict] = []
-    meta: dict = {}
-    while True:
-        if await request_disconnected():
-            stop.set()
-        try:
-            event = await asyncio.wait_for(queue.get(), timeout=0.4)
-        except asyncio.TimeoutError:
-            continue
-        if event is None:
-            break
-        kind = event.get("type")
-        if kind == "progress":
-            yield {**event, "job_id": job_id}
-            continue
-        if kind == "done":
-            meta = event.get("result") or {}
-            items = list(meta.get("items") or [])
-            continue
-        if kind == "cancelled":
-            db.update_nosub_replace_job(
-                job_id,
-                status="cancelled",
-                message="已取消",
-                mark_finished=True,
-            )
-            yield {"type": "cancelled", "job_id": job_id}
-            return
-        if kind == "error":
-            message = event.get("message") or "遍历文件失败"
-            db.add_nosub_replace_item(job_id, status="error", message=message)
-            db.update_nosub_replace_job(job_id, status="error", message=message, mark_finished=True)
-            yield {"type": "error", "message": message, "job_id": job_id}
-            return
+            loop.call_soon_threadsafe(scan_q.put_nowait, None)
 
     counts = {
         "replaced_count": 0,
@@ -321,88 +291,235 @@ async def run_replace_job_events(
         if key:
             counts[key] += 1
 
-    for message in meta.get("walk_errors") or []:
-        recorded = _record_item(
+    async def process_worker() -> None:
+        while True:
+            job_item = await work_q.get()
+            try:
+                if job_item is None:
+                    break
+                index, item = job_item
+                if stop.is_set():
+                    continue
+                try:
+                    payload = await replace_missing_file(item, user=user, stored=stored)
+                except Exception as exc:
+                    payload = _item_payload(item, status="error", message=f"处理失败: {exc}")
+                await out_q.put({"kind": "result", "index": index, "item": item, "payload": payload})
+            finally:
+                work_q.task_done()
+
+    async def pump_scan() -> None:
+        found = 0
+        meta: dict = {}
+        try:
+            while True:
+                event = await scan_q.get()
+                if event is None:
+                    break
+                kind = event.get("type")
+                if kind == "progress":
+                    await out_q.put(
+                        {"kind": "sse", "event": {**event, "job_id": job_id, "scanning": True}}
+                    )
+                elif kind == "found":
+                    if stop.is_set():
+                        continue
+                    found += 1
+                    item = event.get("item") or {}
+                    await out_q.put(
+                        {
+                            "kind": "sse",
+                            "event": {
+                                "type": "item_start",
+                                "job_id": job_id,
+                                "index": found,
+                                "total": found,
+                                "found": found,
+                                "scanning": True,
+                                "scanned": event.get("scanned") or 0,
+                                "videos": event.get("videos") or 0,
+                                "code": item.get("code") or "",
+                                "name": item.get("name") or "",
+                                "path": item.get("path") or "",
+                            },
+                        }
+                    )
+                    await work_q.put((found, item))
+                elif kind == "done":
+                    meta = event.get("result") or {}
+                    found = max(found, int(meta.get("found") or 0))
+                elif kind == "cancelled":
+                    stop.set()
+                    await out_q.put({"kind": "cancelled"})
+                elif kind == "error":
+                    stop.set()
+                    await out_q.put(
+                        {"kind": "error", "message": event.get("message") or "遍历文件失败"}
+                    )
+            await out_q.put({"kind": "scan_done", "found": found, "meta": meta})
+            await work_q.join()
+        finally:
+            for _ in range(REPLACE_WORKERS):
+                await work_q.put(None)
+            await out_q.put({"kind": "all_done", "found": found, "meta": meta})
+
+    processed = 0
+    found_total = 0
+    meta: dict = {}
+    scan_finished = False
+    finished_kind = ""
+    error_message = ""
+    worker_tasks: list[asyncio.Task] = []
+    pump_task: asyncio.Task | None = None
+
+    try:
+        async with _job_lock:
+            loop.run_in_executor(None, scan_thread)
+            worker_tasks = [asyncio.create_task(process_worker()) for _ in range(REPLACE_WORKERS)]
+            pump_task = asyncio.create_task(pump_scan())
+            while True:
+                if await request_disconnected():
+                    stop.set()
+                try:
+                    msg = await asyncio.wait_for(out_q.get(), timeout=0.4)
+                except asyncio.TimeoutError:
+                    if stop.is_set() and pump_task and pump_task.done() and all(task.done() for task in worker_tasks):
+                        finished_kind = finished_kind or "cancelled"
+                        break
+                    continue
+                kind = msg.get("kind")
+                if kind == "sse":
+                    event = msg.get("event") or {}
+                    if event.get("type") == "item_start":
+                        found_total = max(found_total, int(event.get("found") or event.get("total") or 0))
+                    yield event
+                    continue
+                if kind == "result":
+                    processed += 1
+                    found_total = max(found_total, int(msg.get("index") or 0), processed)
+                    payload = msg.get("payload") or {}
+                    recorded = _record_item(job_id, payload)
+                    _bump_count(payload.get("status") or "error")
+                    yield {
+                        "type": "item",
+                        "job_id": job_id,
+                        "index": processed,
+                        "total": found_total,
+                        "scanning": not scan_finished,
+                        **_counts_payload(),
+                        **recorded,
+                    }
+                    if payload.get("status") == "push_failed":
+                        yield {
+                            "type": "toast",
+                            "kind": "error",
+                            "message": (
+                                f"{payload.get('code') or payload.get('name') or '文件'} "
+                                f"推送{label}失败：{payload.get('message') or '未知错误'}"
+                            ),
+                        }
+                    continue
+                if kind == "scan_done":
+                    scan_finished = True
+                    found_total = max(found_total, int(msg.get("found") or 0))
+                    meta = msg.get("meta") or {}
+                    for message in meta.get("walk_errors") or []:
+                        recorded = _record_item(
+                            job_id,
+                            {
+                                "status": "error",
+                                "code": "",
+                                "name": "",
+                                "path": "",
+                                "message": message,
+                                "magnet_title": "",
+                            },
+                        )
+                        _bump_count("error")
+                        yield {
+                            "type": "item",
+                            "job_id": job_id,
+                            "index": processed,
+                            "total": found_total,
+                            "scanning": False,
+                            **_counts_payload(),
+                            **recorded,
+                        }
+                    db.update_nosub_replace_job(
+                        job_id,
+                        scanned=int(meta.get("scanned") or 0),
+                        videos=int(meta.get("videos") or 0),
+                        total=found_total,
+                        message=(
+                            f"扫描结束，发现 {found_total} 个无字幕文件"
+                            if found_total
+                            else "没有找到无字幕文件"
+                        ),
+                    )
+                    yield {
+                        "type": "scan_done",
+                        "job_id": job_id,
+                        "scanned": int(meta.get("scanned") or 0),
+                        "videos": int(meta.get("videos") or 0),
+                        "total": found_total,
+                        "scanning": False,
+                        **_counts_payload(),
+                    }
+                    continue
+                if kind == "cancelled":
+                    finished_kind = "cancelled"
+                    break
+                if kind == "error":
+                    finished_kind = "error"
+                    error_message = msg.get("message") or "遍历文件失败"
+                    break
+                if kind == "all_done":
+                    found_total = max(found_total, int(msg.get("found") or 0))
+                    meta = msg.get("meta") or meta
+                    finished_kind = "done"
+                    break
+    finally:
+        stop.set()
+        if pump_task:
+            pump_task.cancel()
+        for task in worker_tasks:
+            task.cancel()
+        await asyncio.gather(*([pump_task] if pump_task else []), *worker_tasks, return_exceptions=True)
+
+    if finished_kind == "cancelled":
+        db.update_nosub_replace_job(
             job_id,
-            {"status": "error", "code": "", "name": "", "path": "", "message": message, "magnet_title": ""},
+            status="cancelled",
+            message=f"已取消，处理到 {processed}/{found_total}",
+            mark_finished=True,
         )
-        _bump_count("error")
-        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **_counts_payload(), **recorded}
+        yield {"type": "cancelled", "job_id": job_id, "index": processed, "total": found_total}
+        return
+    if finished_kind == "error":
+        db.add_nosub_replace_item(job_id, status="error", message=error_message)
+        db.update_nosub_replace_job(job_id, status="error", message=error_message, mark_finished=True)
+        yield {"type": "error", "message": error_message, "job_id": job_id}
+        return
 
-    db.update_nosub_replace_job(
-        job_id,
-        scanned=int(meta.get("scanned") or 0),
-        videos=int(meta.get("videos") or 0),
-        total=len(items),
-        message=f"开始处理 {len(items)} 个无字幕文件",
-    )
-    yield {
-        "type": "scan_done",
-        "job_id": job_id,
-        "scanned": int(meta.get("scanned") or 0),
-        "videos": int(meta.get("videos") or 0),
-        "total": len(items),
-        **_counts_payload(),
-    }
-
-    if not items:
+    if found_total == 0 and processed == 0:
         db.update_nosub_replace_job(
             job_id,
             status="done",
+            scanned=int(meta.get("scanned") or 0),
+            videos=int(meta.get("videos") or 0),
+            total=0,
             message="没有找到无字幕文件",
             mark_finished=True,
         )
         yield {"type": "done", "job_id": job_id, "job": db.get_nosub_replace_job(job_id, user["id"])}
         return
 
-    async with _job_lock:
-        for index, item in enumerate(items, start=1):
-            if stop.is_set() or await request_disconnected():
-                db.update_nosub_replace_job(
-                    job_id,
-                    status="cancelled",
-                    message=f"已取消，处理到 {index - 1}/{len(items)}",
-                    mark_finished=True,
-                )
-                yield {"type": "cancelled", "job_id": job_id, "index": index - 1, "total": len(items)}
-                return
-            yield {
-                "type": "item_start",
-                "job_id": job_id,
-                "index": index,
-                "total": len(items),
-                "code": item.get("code") or "",
-                "name": item.get("name") or "",
-                "path": item.get("path") or "",
-            }
-            try:
-                payload = await replace_missing_file(item, user=user, stored=stored)
-            except Exception as exc:
-                payload = _item_payload(item, status="error", message=f"处理失败: {exc}")
-            recorded = _record_item(job_id, payload)
-            _bump_count(payload["status"])
-            event = {
-                "type": "item",
-                "job_id": job_id,
-                "index": index,
-                "total": len(items),
-                **_counts_payload(),
-                **recorded,
-            }
-            yield event
-            if payload["status"] == "push_failed":
-                yield {
-                    "type": "toast",
-                    "kind": "error",
-                    "message": f"{payload.get('code') or payload.get('name') or '文件'} 推送{label}失败：{payload.get('message') or '未知错误'}",
-                }
-
     finished = db.update_nosub_replace_job(
         job_id,
         status="done",
         scanned=int(meta.get("scanned") or 0),
         videos=int(meta.get("videos") or 0),
-        total=len(items),
+        total=found_total,
         message="",
         mark_finished=True,
     )

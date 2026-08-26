@@ -169,6 +169,7 @@ def iter_scan_missing_subs(
     dir_cache: dict[str, list[str]] = {}
     skip_paths = set(ignored_paths or ())
     items: list[dict] = []
+    found_count = 0
     scanned = 0
     videos = 0
     dirs = 0
@@ -204,7 +205,7 @@ def iter_scan_missing_subs(
             "folder_index": folder_index,
             "folder_total": len(selected),
             "current_dir": current_dir,
-            "found": skip + len(items),
+            "found": skip + found_count,
             "page_found": len(items),
             "percent": percent,
             "truncated": truncated,
@@ -279,28 +280,38 @@ def iter_scan_missing_subs(
                 except OSError:
                     size = "0"
                     mtime = "0"
-                items.append(
-                    {
-                        "code": code,
-                        "part": extract_part_tag(name),
-                        "name": name,
-                        "path": str(path),
-                        "parent_dir": dirpath,
-                        "size": size,
-                        "mtime": mtime,
-                        "nfo_path": nfo_path,
-                        "title": nfo.get("title") or "",
-                        "plot": nfo.get("plot") or "",
-                        "date": nfo.get("date") or "",
-                        "studio": nfo.get("studio") or "",
-                        "actors": nfo.get("actors") or [],
-                        "images": _pick_images(dirpath, names, stem),
+                found_count += 1
+                item = {
+                    "code": code,
+                    "part": extract_part_tag(name),
+                    "name": name,
+                    "path": str(path),
+                    "parent_dir": dirpath,
+                    "size": size,
+                    "mtime": mtime,
+                    "nfo_path": nfo_path,
+                    "title": nfo.get("title") or "",
+                    "plot": nfo.get("plot") or "",
+                    "date": nfo.get("date") or "",
+                    "studio": nfo.get("studio") or "",
+                    "actors": nfo.get("actors") or [],
+                    "images": _pick_images(dirpath, names, stem),
+                }
+                if collect_all:
+                    yield {
+                        "type": "found",
+                        "item": item,
+                        "found": found_count,
+                        "scanned": scanned,
+                        "videos": videos,
+                        "current_dir": dirpath,
                     }
-                )
-                if page_size and len(items) >= page_size:
-                    has_more = True
-                    page_full = True
-                    break
+                else:
+                    items.append(item)
+                    if page_size and len(items) >= page_size:
+                        has_more = True
+                        page_full = True
+                        break
             if truncated or page_full:
                 break
         if truncated or page_full:
@@ -319,7 +330,7 @@ def iter_scan_missing_subs(
         "folder_index": max(folder_index, 0),
         "folder_total": len(selected),
         "current_dir": current_dir,
-        "found": skip + len(items),
+        "found": skip + found_count,
         "page_found": len(items),
         "percent": 99,
         "truncated": truncated,
@@ -330,7 +341,7 @@ def iter_scan_missing_subs(
             "items": items,
             "scanned": scanned,
             "videos": videos,
-            "found": len(items),
+            "found": found_count,
             "offset": skip,
             "limit": page_size,
             "has_more": has_more or truncated,
