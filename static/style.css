@@ -2321,6 +2321,19 @@ button.danger-btn:hover {
   margin-bottom: 0.65rem;
 }
 
+.nosub-report-filters {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin: 0 0 0.9rem;
+}
+
+.nosub-report-filters .ghost-btn.active,
+.nosub-replace-live-counts .ghost-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 .nosub-replace-live-counts {
   display: flex;
   flex-wrap: wrap;
@@ -2373,4 +2386,12 @@ button.danger-btn:hover {
 
 .nosub-replace-live-item.is-pending {
   opacity: 0.78;
+}
+
+.nosub-replace-live-item-actions {
+  margin-top: 0.35rem;
+}
+
+#nosubLookupModal {
+  z-index: 1105;
 }

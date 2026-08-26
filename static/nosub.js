@@ -46,6 +46,7 @@ const nosubLogsResultsEl = document.getElementById("nosubLogsResults");
 const nosubReplaceReportModal = document.getElementById("nosubReplaceReportModal");
 const nosubReplaceReportTitle = document.getElementById("nosubReplaceReportTitle");
 const nosubReplaceReportSummary = document.getElementById("nosubReplaceReportSummary");
+const nosubReplaceReportFilters = document.getElementById("nosubReplaceReportFilters");
 const nosubReplaceReportBody = document.getElementById("nosubReplaceReportBody");
 const closeNosubReplaceReportBtn = document.getElementById("closeNosubReplaceReportBtn");
 const nosubIgnoredRefreshBtn = document.getElementById("nosubIgnoredRefreshBtn");
@@ -70,6 +71,8 @@ let nosubReplaceRunning = false;
 let nosubIgnoredItems = [];
 let nosubReplaceLiveJob = null;
 let nosubReplaceLiveState = null;
+let nosubReplaceReportJob = null;
+let nosubReplaceReportFilter = "all";
 
 function nosubPushLabel() {
   if (typeof pushBackend === "string" && pushBackend === "cd2") return "CD2";
@@ -896,46 +899,101 @@ function nosubReplaceStatusLabel(status) {
   }[status] || status || "未知";
 }
 
-function renderNosubReplaceSection(title, items, emptyText) {
-  const rows = (items || [])
-    .map((item) => {
-      const label = item.code || item.name || item.path || "未命名";
-      const extra = item.message ? ` — ${item.message}` : "";
-      const name = item.name && item.name !== label ? `（${item.name}）` : "";
-      return `<li><strong>${escapeHtml(label)}</strong>${escapeHtml(name)}${escapeHtml(extra)}</li>`;
-    })
-    .join("");
-  return `
-    <section class="nosub-report-section">
-      <h3>${escapeHtml(title)}（${items.length}）</h3>
-      ${
-        items.length
-          ? `<ul class="nosub-report-list">${rows}</ul>`
-          : `<p class="nosub-report-empty">${escapeHtml(emptyText)}</p>`
-      }
-    </section>`;
+const NOSUB_REPLACE_FILTERS = [
+  { id: "all", label: "全部" },
+  { id: "replaced", label: "替换成功" },
+  { id: "not_found", label: "未找到字幕" },
+  { id: "push_failed", label: "推送失败" },
+  { id: "error", label: "其他失败" },
+];
+
+function nosubReplaceFilterCount(items, filter) {
+  const list = items || [];
+  if (filter === "all") return list.length;
+  return list.filter((item) => item.status === filter).length;
 }
 
-function openNosubReplaceReport(job) {
-  if (!job || !nosubReplaceReportModal) return;
-  const replaced = (job.items || []).filter((item) => item.status === "replaced");
-  const notFound = (job.items || []).filter((item) => item.status === "not_found");
-  const pushFailed = (job.items || []).filter((item) => item.status === "push_failed");
-  const errors = (job.items || []).filter((item) => item.status === "error");
+function nosubReplaceItemLookupable(item) {
+  return Boolean((item?.code || "").trim()) && ["not_found", "push_failed", "error"].includes(item.status);
+}
+
+function renderNosubReplaceFilterBar(items, activeFilter, attrName) {
+  return NOSUB_REPLACE_FILTERS.map((filter) => {
+    const count = nosubReplaceFilterCount(items, filter.id);
+    const active = activeFilter === filter.id ? " active" : "";
+    return `<button class="ghost-btn${active}" type="button" data-${attrName}="${filter.id}">${escapeHtml(filter.label)} ${count}</button>`;
+  }).join("");
+}
+
+function renderNosubReplaceResultItem(item, { pending = false } = {}) {
+  const label = item.code || item.name || item.path || "未命名";
+  const extraName = item.name && item.name !== label ? item.name : "";
+  const canLookup = !pending && nosubReplaceItemLookupable(item);
+  return `
+    <article class="nosub-replace-live-item${pending ? " is-pending" : ""}">
+      <div class="nosub-replace-live-item-main">
+        <span class="nosub-replace-live-item-title">${escapeHtml(label)}${extraName ? escapeHtml(`（${extraName}）`) : ""}</span>
+        <span class="badge ${nosubReplaceBadgeClass(item.status)}">${escapeHtml(nosubReplaceStatusLabel(item.status))}</span>
+      </div>
+      ${item.message ? `<div class="nosub-replace-live-item-msg">${escapeHtml(item.message)}</div>` : ""}
+      ${item.path ? `<div class="nosub-replace-live-item-path">${escapeHtml(item.path)}</div>` : ""}
+      ${
+        canLookup
+          ? `<div class="nosub-replace-live-item-actions"><button class="ghost-btn nosub-replace-lookup-btn" type="button" data-code="${escapeAttr(item.code || "")}" data-name="${escapeAttr(item.name || item.code || "")}" data-path="${escapeAttr(item.path || "")}">查找</button></div>`
+          : ""
+      }
+    </article>`;
+}
+
+function lookupNosubReplaceResult(button) {
+  const item = {
+    code: button?.dataset.code || "",
+    name: button?.dataset.name || "",
+    path: button?.dataset.path || "",
+  };
+  if (!item.code) {
+    showToast("这个文件没有识别出番号，无法查找", { type: "error" });
+    return;
+  }
+  lookupNosubItem(item);
+}
+
+function renderNosubReplaceReport(job) {
+  if (!job) return;
+  const items = job.items || [];
+  const replaced = items.filter((item) => item.status === "replaced");
+  const notFound = items.filter((item) => item.status === "not_found");
+  const pushFailed = items.filter((item) => item.status === "push_failed");
+  const errors = items.filter((item) => item.status === "error");
+  const filtered =
+    nosubReplaceReportFilter === "all"
+      ? items
+      : items.filter((item) => item.status === nosubReplaceReportFilter);
   if (nosubReplaceReportTitle) {
     nosubReplaceReportTitle.textContent = `一键替换记录 #${job.id}`;
   }
   if (nosubReplaceReportSummary) {
     nosubReplaceReportSummary.textContent = `${nosubReplaceStatusLabel(job.status)} · 扫描 ${job.scanned || 0} 项，视频 ${job.videos || 0} 个，待处理 ${job.total || 0} 个。成功 ${job.replaced_count || replaced.length}，未找到 ${job.not_found_count || notFound.length}，推送失败 ${job.push_failed_count || pushFailed.length}，其他失败 ${job.error_count || errors.length}。`;
   }
-  if (nosubReplaceReportBody) {
-    nosubReplaceReportBody.innerHTML = [
-      renderNosubReplaceSection("替换成功", replaced, "没有替换成功的文件"),
-      renderNosubReplaceSection("没有找到字幕（已加入忽略列表）", notFound, "没有未找到字幕的文件"),
-      renderNosubReplaceSection("推送失败", pushFailed, "没有推送失败的文件"),
-      renderNosubReplaceSection("其他失败", errors, "没有其他失败"),
-    ].join("");
+  if (nosubReplaceReportFilters) {
+    nosubReplaceReportFilters.innerHTML = renderNosubReplaceFilterBar(items, nosubReplaceReportFilter, "report-filter");
   }
+  if (nosubReplaceReportBody) {
+    if (!filtered.length) {
+      nosubReplaceReportBody.innerHTML = '<p class="nosub-report-empty">这个状态下没有记录</p>';
+    } else {
+      nosubReplaceReportBody.innerHTML = `<div class="nosub-replace-live-list">${filtered
+        .map((item) => renderNosubReplaceResultItem(item))
+        .join("")}</div>`;
+    }
+  }
+}
+
+function openNosubReplaceReport(job) {
+  if (!job || !nosubReplaceReportModal) return;
+  nosubReplaceReportJob = job;
+  nosubReplaceReportFilter = "all";
+  renderNosubReplaceReport(job);
   nosubReplaceReportModal.classList.remove("hidden");
 }
 
@@ -1034,6 +1092,7 @@ function resetNosubReplaceLive() {
     counts: { replaced_count: 0, not_found_count: 0, push_failed_count: 0, error_count: 0 },
     pending: [],
     scanning: true,
+    filter: "all",
     items: [],
   };
   nosubReplaceLiveDetailBtn?.classList.add("hidden");
@@ -1071,12 +1130,8 @@ function renderNosubReplaceLive() {
   nosubReplaceLiveEl.classList.toggle("is-error", state.status === "error" || state.status === "cancelled");
   if (nosubReplaceLiveTitle) nosubReplaceLiveTitle.textContent = state.title;
   if (nosubReplaceLiveCounts) {
-    nosubReplaceLiveCounts.innerHTML = [
-      `<span class="nosub-replace-stat">成功 ${state.counts.replaced_count || 0}</span>`,
-      `<span class="nosub-replace-stat">未找到 ${state.counts.not_found_count || 0}</span>`,
-      `<span class="nosub-replace-stat">推送失败 ${state.counts.push_failed_count || 0}</span>`,
-      `<span class="nosub-replace-stat">其他失败 ${state.counts.error_count || 0}</span>`,
-    ].join("");
+    const items = state.items || [];
+    nosubReplaceLiveCounts.innerHTML = renderNosubReplaceFilterBar(items, state.filter || "all", "live-filter");
   }
   if (nosubReplaceLiveFill) {
     if (state.indeterminate) {
@@ -1092,26 +1147,16 @@ function renderNosubReplaceLive() {
   if (nosubReplaceLiveList) {
     const rows = [];
     const pending = Array.isArray(state.pending) ? state.pending : state.pending ? [state.pending] : [];
-    pending.forEach((item) => rows.push(renderNosubReplaceLiveItem(item, true)));
-    state.items.forEach((item) => rows.push(renderNosubReplaceLiveItem(item, false)));
+    const filter = state.filter || "all";
+    if (filter === "all") {
+      pending.forEach((item) => rows.push(renderNosubReplaceResultItem(item, { pending: true })));
+    }
+    const items = filter === "all" ? state.items : state.items.filter((item) => item.status === filter);
+    items.forEach((item) => rows.push(renderNosubReplaceResultItem(item)));
     nosubReplaceLiveList.innerHTML = rows.length
       ? rows.join("")
-      : '<p class="nosub-report-empty">扫到无字幕文件后会立刻查询并显示结果</p>';
+      : `<p class="nosub-report-empty">${filter === "all" ? "扫到无字幕文件后会立刻查询并显示结果" : "这个状态下没有记录"}</p>`;
   }
-}
-
-function renderNosubReplaceLiveItem(item, pending) {
-  const label = item.code || item.name || item.path || "未命名";
-  const extraName = item.name && item.name !== label ? item.name : "";
-  return `
-    <article class="nosub-replace-live-item${pending ? " is-pending" : ""}">
-      <div class="nosub-replace-live-item-main">
-        <span class="nosub-replace-live-item-title">${escapeHtml(label)}${extraName ? escapeHtml(`（${extraName}）`) : ""}</span>
-        <span class="badge ${nosubReplaceBadgeClass(item.status)}">${escapeHtml(nosubReplaceStatusLabel(item.status))}</span>
-      </div>
-      ${item.message ? `<div class="nosub-replace-live-item-msg">${escapeHtml(item.message)}</div>` : ""}
-      ${item.path ? `<div class="nosub-replace-live-item-path">${escapeHtml(item.path)}</div>` : ""}
-    </article>`;
 }
 
 function finishNosubReplaceLive(status, text, job = null) {
@@ -1349,6 +1394,28 @@ nosubReplaceLiveDetailBtn?.addEventListener("click", () => {
   if (nosubReplaceLiveJob?.id) {
     openNosubReplaceJob(nosubReplaceLiveJob.id);
   }
+});
+nosubReplaceReportFilters?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-report-filter]");
+  if (!button || !nosubReplaceReportJob) return;
+  nosubReplaceReportFilter = button.dataset.reportFilter || "all";
+  renderNosubReplaceReport(nosubReplaceReportJob);
+});
+nosubReplaceReportBody?.addEventListener("click", (event) => {
+  const button = event.target.closest(".nosub-replace-lookup-btn");
+  if (!button) return;
+  lookupNosubReplaceResult(button);
+});
+nosubReplaceLiveEl?.addEventListener("click", (event) => {
+  const filterBtn = event.target.closest("[data-live-filter]");
+  if (filterBtn && nosubReplaceLiveState) {
+    const next = filterBtn.dataset.liveFilter || "all";
+    nosubReplaceLiveState.filter = nosubReplaceLiveState.filter === next && next !== "all" ? "all" : next;
+    renderNosubReplaceLive();
+    return;
+  }
+  const lookupBtn = event.target.closest(".nosub-replace-lookup-btn");
+  if (lookupBtn) lookupNosubReplaceResult(lookupBtn);
 });
 nosubPageSizeSelect?.addEventListener("change", () => {
   nosubPageSize = currentNosubPageSize();
