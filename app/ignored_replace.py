@@ -5,7 +5,8 @@ import asyncio
 from app import db
 from app.config import settings
 from app.duplicates import delete_video_file
-from app.integrations import p115
+from app.integrations import push as push_service
+from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
 from app.integrations.p115 import P115Error, P115NotConfiguredError
 from app.models import MagnetLink
 from app.scraper.service import ScrapeError, scrape_movie
@@ -57,8 +58,10 @@ async def check_ignored_item(item: dict) -> dict:
     user = db.get_user_by_id(int(item["user_id"]))
     stored = db.get_user_settings(int(item["user_id"])) if user else {}
     user_cfg = merge_settings(stored)
-    if not (user_cfg.get("p115_cookie") or "").strip():
-        message = "未配置 115 Cookie，无法自动推送"
+    backend = push_service.active_backend(user_cfg)
+    label = push_service.backend_label(user_cfg)
+    if not backend:
+        message = "未配置推送方式，无法自动推送"
         db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
         result["message"] = message
         return result
@@ -83,22 +86,24 @@ async def check_ignored_item(item: dict) -> dict:
         result["message"] = message
         return result
 
+    folder_id = push_service.default_folder_id(user_cfg)
+    folder = push_service.folder_meta(user_cfg, folder_id)
     try:
-        push_result = await p115.push_magnet(magnet.link, stored)
-    except (P115NotConfiguredError, P115Error) as exc:
+        push_result = await push_service.push_magnet(magnet.link, stored, folder_id)
+    except (CD2NotConfiguredError, P115NotConfiguredError, CD2Error, P115Error) as exc:
         message = str(exc)
         db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
         result["message"] = message
         return result
     except Exception as exc:
-        message = f"推送115失败: {exc}"
+        message = f"推送{label}失败: {exc}"
         db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
         result["message"] = message
         return result
 
     pushed = bool(push_result.success) or "已存在" in (push_result.message or "")
     if not pushed:
-        message = push_result.message or "推送115失败"
+        message = push_result.message or f"推送{label}失败"
         db.update_ignored_missing_sub(
             item_id,
             magnet_link=magnet.link,
@@ -115,10 +120,10 @@ async def check_ignored_item(item: dict) -> dict:
             code=code,
             magnet_link=magnet.link,
             magnet_title=magnet.title,
-            backend="p115",
-            folder_id=str(user_cfg.get("p115_folder_cid") or ""),
-            folder_name="",
-            folder_path=str(user_cfg.get("p115_folder_path") or ""),
+            backend=push_result.backend or backend,
+            folder_id=str(folder.get("folder_id") or ""),
+            folder_name=str(folder.get("folder_name") or ""),
+            folder_path=str(folder.get("folder_path") or ""),
             success=True,
             message=push_result.message or "自动替换推送成功",
         )
@@ -132,9 +137,9 @@ async def check_ignored_item(item: dict) -> dict:
             deleted = False
             delete_error = str(exc)
     if deleted:
-        message = "已推送115并删除原文件"
+        message = f"已推送{label}并删除原文件"
     else:
-        message = f"已推送115，但删除原文件失败: {delete_error}"
+        message = f"已推送{label}，但删除原文件失败: {delete_error}"
 
     updated = db.update_ignored_missing_sub(
         item_id,

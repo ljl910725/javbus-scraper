@@ -10,7 +10,8 @@ from app import db
 from app.config import settings
 from app.duplicates import delete_video_file
 from app.ignored_replace import pick_subtitle_magnet
-from app.integrations import p115
+from app.integrations import push as push_service
+from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
 from app.integrations.p115 import P115Error, P115NotConfiguredError
 from app.missing_subs import _MAX_REPLACE_ITEMS, iter_scan_missing_subs
 from app.scraper.article_torrents import fetch_article_torrents
@@ -114,8 +115,10 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
         return _item_payload(item, status="error", message="无法识别番号")
 
     user_cfg = merge_settings(stored)
-    if not (user_cfg.get("p115_cookie") or "").strip():
-        return _item_payload(item, status="push_failed", message="未配置 115 Cookie")
+    backend = push_service.active_backend(user_cfg)
+    label = push_service.backend_label(user_cfg)
+    if not backend:
+        return _item_payload(item, status="push_failed", message="未配置推送方式，请在设置页配置 CD2 或 115")
 
     magnet = None
     used_javbus = False
@@ -137,20 +140,22 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
     if magnet is None:
         return _item_payload(item, status="not_found", message="未找到带字幕磁力")
 
+    folder_id = push_service.default_folder_id(user_cfg)
+    folder = push_service.folder_meta(user_cfg, folder_id)
     try:
-        push_result = await p115.push_magnet(magnet.link, stored)
-    except (P115NotConfiguredError, P115Error) as exc:
+        push_result = await push_service.push_magnet(magnet.link, stored, folder_id)
+    except (CD2NotConfiguredError, P115NotConfiguredError, CD2Error, P115Error) as exc:
         return _item_payload(
             item,
             status="push_failed",
-            message=str(exc) or "推送115失败",
+            message=str(exc) or f"推送{label}失败",
             magnet_title=magnet.title,
         )
     except Exception as exc:
         return _item_payload(
             item,
             status="push_failed",
-            message=f"推送115失败: {exc}",
+            message=f"推送{label}失败: {exc}",
             magnet_title=magnet.title,
         )
 
@@ -159,7 +164,7 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
         return _item_payload(
             item,
             status="push_failed",
-            message=push_result.message or "推送115失败",
+            message=push_result.message or f"推送{label}失败",
             magnet_title=magnet.title,
         )
 
@@ -168,12 +173,12 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
         code=code,
         magnet_link=magnet.link,
         magnet_title=magnet.title,
-        backend="p115",
-        folder_id=str(user_cfg.get("p115_folder_cid") or ""),
-        folder_name="",
-        folder_path=str(user_cfg.get("p115_folder_path") or ""),
+        backend=push_result.backend or backend,
+        folder_id=str(folder.get("folder_id") or ""),
+        folder_name=str(folder.get("folder_name") or ""),
+        folder_path=str(folder.get("folder_path") or ""),
         success=True,
-        message=push_result.message or "一键替换推送成功",
+        message=push_result.message or f"一键替换推送{label}成功",
     )
 
     if _file_exists(path):
@@ -183,7 +188,7 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
             return _item_payload(
                 item,
                 status="error",
-                message=f"已推送115，但删除原文件失败: {exc}",
+                message=f"已推送{label}，但删除原文件失败: {exc}",
                 magnet_title=magnet.title,
             )
 
@@ -193,14 +198,14 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
             ignored["id"],
             magnet_link=magnet.link,
             magnet_title=magnet.title,
-            message="一键替换：已推送115并删除原文件",
+            message=f"一键替换：已推送{label}并删除原文件",
             mark_replaced=True,
         )
 
     return _item_payload(
         item,
         status="replaced",
-        message="已推送115并删除原文件",
+        message=f"已推送{label}并删除原文件",
         magnet_title=magnet.title,
     )
 
@@ -232,8 +237,10 @@ async def run_replace_job_events(
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
     stored = db.get_user_settings(user["id"])
     user_cfg = merge_settings(stored)
-    if not (user_cfg.get("p115_cookie") or "").strip():
-        message = "未配置 115 Cookie，无法推送"
+    backend = push_service.active_backend(user_cfg)
+    label = push_service.backend_label(user_cfg)
+    if not backend:
+        message = "未配置推送方式，请在设置页配置 CD2 或 115"
         db.update_nosub_replace_job(job_id, status="error", message=message, mark_finished=True)
         yield {"type": "error", "message": message, "job_id": job_id}
         return
@@ -402,7 +409,7 @@ async def run_replace_job_events(
                 yield {
                     "type": "toast",
                     "kind": "error",
-                    "message": f"{payload.get('code') or payload.get('name') or '文件'} 推送115失败：{payload.get('message') or '未知错误'}",
+                    "message": f"{payload.get('code') or payload.get('name') or '文件'} 推送{label}失败：{payload.get('message') or '未知错误'}",
                 }
 
     finished = db.update_nosub_replace_job(

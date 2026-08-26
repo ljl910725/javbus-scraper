@@ -43,6 +43,50 @@ def _p115_configured(cfg: dict) -> bool:
     return bool(cfg.get("p115_cookie"))
 
 
+def backend_label(user_settings: dict | None = None) -> str:
+    backend = active_backend(user_settings)
+    if backend == "cd2":
+        return "CD2"
+    if backend == "p115":
+        return "115"
+    return "网盘"
+
+
+def default_folder_id(user_settings: dict | None = None) -> str | None:
+    cfg = _resolve_settings(user_settings)
+    if active_backend(cfg) != "cd2":
+        return None
+    folders = cfg.get("cd2_push_folders") or []
+    if not folders:
+        return None
+    folder_id = str(folders[0].get("id") or "").strip()
+    return folder_id or None
+
+
+def folder_meta(user_settings: dict | None = None, folder_id: str | None = None) -> dict:
+    cfg = _resolve_settings(user_settings)
+    backend = active_backend(cfg)
+    target_id = folder_id or default_folder_id(cfg)
+    if backend == "p115":
+        path = cfg.get("p115_folder_path") or ""
+        return {
+            "folder_id": cfg.get("p115_folder_cid") or target_id or "",
+            "folder_name": path.rstrip("/").split("/")[-1] if path else "",
+            "folder_path": path,
+        }
+    if backend == "cd2":
+        try:
+            _, folder = cd2.resolve_push_folder(cfg, target_id)
+            return {
+                "folder_id": folder.get("id") or target_id or "",
+                "folder_name": folder.get("name") or "",
+                "folder_path": folder.get("path") or "",
+            }
+        except cd2.CD2Error:
+            return {"folder_id": target_id or "", "folder_name": "", "folder_path": ""}
+    return {"folder_id": target_id or "", "folder_name": "", "folder_path": ""}
+
+
 async def check_push_status(user_settings: dict | None = None) -> dict:
     cfg = _resolve_settings(user_settings)
     p115_info = {

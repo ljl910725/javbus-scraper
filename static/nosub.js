@@ -71,6 +71,17 @@ let nosubIgnoredItems = [];
 let nosubReplaceLiveJob = null;
 let nosubReplaceLiveState = null;
 
+function nosubPushLabel() {
+  if (typeof pushBackend === "string" && pushBackend === "cd2") return "CD2";
+  if (typeof pushBackend === "string" && pushBackend === "p115") return "115";
+  return "网盘";
+}
+
+function nosubPushAvailable() {
+  if (typeof pushReady !== "undefined" && pushReady) return true;
+  return typeof pushBackend === "string" && (pushBackend === "cd2" || pushBackend === "p115");
+}
+
 function currentNosubPageSize() {
   const value = Number(nosubPageSizeSelect?.value);
   return NOSUB_PAGE_SIZES.includes(value) ? value : 10;
@@ -533,7 +544,7 @@ async function ignoreNosubFile(button, item) {
   if (!item?.path) return;
   const ok = await showAppConfirm({
     title: "忽略这个文件",
-    message: `忽略后下次排查不再显示这个文件。\n可在忽略列表里手动检查带字幕版本，找到后会推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`,
+    message: `忽略后下次排查不再显示这个文件。\n可在忽略列表里手动检查带字幕版本，找到后会推送到 ${nosubPushLabel()} 并删除原文件。\n\n${item.name}\n${item.path}`,
     confirmText: "忽略",
   });
   if (!ok) return;
@@ -920,7 +931,7 @@ function openNosubReplaceReport(job) {
     nosubReplaceReportBody.innerHTML = [
       renderNosubReplaceSection("替换成功", replaced, "没有替换成功的文件"),
       renderNosubReplaceSection("没有找到字幕", notFound, "没有未找到字幕的文件"),
-      renderNosubReplaceSection("推送115失败", pushFailed, "没有推送失败的文件"),
+      renderNosubReplaceSection("推送失败", pushFailed, "没有推送失败的文件"),
       renderNosubReplaceSection("其他失败", errors, "没有其他失败"),
     ].join("");
   }
@@ -1127,14 +1138,14 @@ async function runNosubReplace() {
     setNosubStatus("请先选择文件夹", true);
     return;
   }
-  if (typeof p115Ready !== "undefined" && !p115Ready) {
-    showToast("还没有配置 115 Cookie，无法一键替换", { type: "error" });
+  if (!nosubPushAvailable()) {
+    showToast("还没有配置可用的推送方式，请先在设置页配置 CD2 或 115", { type: "error" });
     return;
   }
   const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
   const ok = await showAppConfirm({
     title: "一键替换无字幕文件",
-    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 115 并删除现在的文件；没找到就跳过。同一文件夹 5 分钟内不能再执行一次。页面会实时显示每个文件的处理结果。`,
+    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 ${nosubPushLabel()} 并删除现在的文件；没找到就跳过。同一文件夹 5 分钟内不能再执行一次。页面会实时显示每个文件的处理结果。`,
     confirmText: "开始替换",
     danger: true,
   });
@@ -1209,7 +1220,7 @@ async function runNosubReplace() {
           code: event.code || "",
           name: event.name || "",
           path: event.path || "",
-          message: "正在查询字幕并推送 115",
+          message: `正在查询字幕并推送到 ${nosubPushLabel()}`,
         };
         nosubReplaceLiveState.text = `正在处理 ${event.index}/${event.total} ${event.code || event.name || ""}`;
         renderNosubReplaceLive();
