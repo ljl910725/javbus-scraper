@@ -7,7 +7,7 @@ import httpx
 
 from app.config import settings
 from app.models import MovieInfo
-from app.scraper.article_torrents import fetch_article_torrents
+from app.scraper.article_torrents import fetch_article_quality_map, fetch_article_torrents
 from app.scraper.client import JavBusClient, get_client
 from app.scraper.magnets import fetch_magnets, merge_magnets, sort_magnets
 from app.scraper.parser import (
@@ -276,16 +276,20 @@ async def fuzzy_search_movies(
     if not previews:
         raise ScrapeError(f"未找到与「{keywords}」相关的影片")
 
-    return [
-        {
-            "code": item.code,
-            "title": item.title,
-            "cover_url": item.cover_url,
-            "source_url": item.source_url,
-            "release_date": item.release_date,
-            "has_hd": item.has_hd,
-            "has_ultra": item.has_ultra,
-            "has_subtitle": item.has_subtitle,
-        }
-        for item in previews
-    ]
+    quality_map = await fetch_article_quality_map([item.code for item in previews])
+    results = []
+    for item in previews:
+        extra = quality_map.get(normalize_code(item.code) or (item.code or "").upper()) or {}
+        results.append(
+            {
+                "code": item.code,
+                "title": item.title,
+                "cover_url": item.cover_url,
+                "source_url": item.source_url,
+                "release_date": item.release_date,
+                "has_hd": bool(item.has_hd or extra.get("has_hd")),
+                "has_ultra": bool(item.has_ultra or extra.get("has_ultra")),
+                "has_subtitle": bool(item.has_subtitle or extra.get("has_subtitle")),
+            }
+        )
+    return results

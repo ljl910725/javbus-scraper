@@ -85,12 +85,12 @@ const PAGE_SIZE_OPTIONS = [10, 20, 30, 50, 100];
 
 const LIST_FILTER_OPTIONS = [
   { value: "all", label: "全部" },
-  { value: "ultra", label: "有超清" },
-  { value: "hd", label: "有高清" },
+  { value: "ultra", label: "有 UHD" },
+  { value: "hd", label: "有 HD" },
   { value: "subtitle", label: "有字幕" },
-  { value: "hd_sub", label: "高清 + 字幕" },
-  { value: "ultra_sub", label: "超清 + 字幕" },
-  { value: "any_quality", label: "有画质（高清或超清）" },
+  { value: "hd_sub", label: "HD + 字幕" },
+  { value: "ultra_sub", label: "UHD + 字幕" },
+  { value: "any_quality", label: "有画质（UHD 或 HD）" },
   { value: "full_tags", label: "画质 + 字幕齐全" },
   { value: "no_tags", label: "无标签" },
   { value: "has_magnet", label: "有磁力（精确查询）" },
@@ -100,7 +100,7 @@ const LIST_FILTER_OPTIONS = [
 const LIST_SORT_OPTIONS = [
   { value: "date_desc", label: "发行日期：新 → 旧" },
   { value: "date_asc", label: "发行日期：旧 → 新" },
-  { value: "quality_desc", label: "画质优先（超清 > 高清 > 字幕）" },
+  { value: "quality_desc", label: "画质优先（UHD > HD > 字幕）" },
   { value: "tags_desc", label: "标签数量：多 → 少" },
   { value: "code_asc", label: "番号：A → Z" },
   { value: "code_desc", label: "番号：Z → A" },
@@ -124,11 +124,11 @@ function matchesListFilter(item, filter) {
     case "ultra":
       return item.has_ultra;
     case "hd":
-      return item.has_hd;
+      return item.has_hd && !item.has_ultra;
     case "subtitle":
       return item.has_subtitle;
     case "hd_sub":
-      return item.has_hd && item.has_subtitle;
+      return item.has_hd && !item.has_ultra && item.has_subtitle;
     case "ultra_sub":
       return item.has_ultra && item.has_subtitle;
     case "any_quality":
@@ -217,7 +217,7 @@ function movieToListItem(movie) {
       : movie.cover_url,
     source_url: movie.source_url,
     release_date: movie.release_date,
-    has_hd: Boolean(best?.is_hd) || magnets.some((m) => m.is_hd),
+    has_hd: magnets.some((m) => m.is_hd || m.is_uhd),
     has_ultra: magnets.some((m) => m.is_uhd || /超清|4k|uhd/i.test(m.title || "")),
     has_subtitle: Boolean(best?.has_subtitle) || magnets.some((m) => m.has_subtitle),
     best_magnet_link: best?.link || "",
@@ -253,7 +253,7 @@ function applyMagnetToListItem(code, magnet) {
   if (!item || !magnet) return "";
   item.best_magnet_link = magnet.link;
   item.best_magnet_title = magnet.title;
-  item.has_hd = Boolean(magnet.is_hd) || item.has_hd;
+  item.has_hd = Boolean(magnet.is_hd) || Boolean(magnet.is_uhd) || item.has_hd;
   item.has_subtitle = Boolean(magnet.has_subtitle) || item.has_subtitle;
   item.has_ultra = item.has_ultra || Boolean(magnet.is_uhd) || /超清|4k|uhd/i.test(magnet.title || "");
   return item.best_magnet_link;
@@ -384,8 +384,8 @@ function setSearchMode(mode) {
 
 function renderListBadges(item) {
   const badges = [];
-  if (item.has_ultra) badges.push('<span class="badge badge-uhd">超清</span>');
-  if (item.has_hd) badges.push('<span class="badge badge-hd">高清</span>');
+  if (item.has_ultra) badges.push('<span class="badge badge-uhd">UHD</span>');
+  else if (item.has_hd) badges.push('<span class="badge badge-hd">HD</span>');
   if (item.has_subtitle) badges.push('<span class="badge badge-sub">字幕</span>');
   if (!badges.length) return "";
   return badges.join("");
