@@ -1081,6 +1081,11 @@ button:disabled {
   color: #fbbf24;
 }
 
+.badge-fail {
+  background: rgba(196, 69, 69, 0.2);
+  color: var(--danger);
+}
+
 .copy-btn,
 .push-btn,
 .push-best-btn {
@@ -2289,4 +2294,83 @@ button.danger-btn:hover {
   margin-top: 0.4rem;
   font-size: 0.78rem;
   color: var(--muted);
+}
+
+.nosub-replace-live {
+  margin: 0 0 1rem;
+  padding: 0.85rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.nosub-replace-live.is-done {
+  border-color: rgba(81, 207, 102, 0.45);
+}
+
+.nosub-replace-live.is-error {
+  border-color: rgba(196, 69, 69, 0.45);
+}
+
+.nosub-replace-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  margin-bottom: 0.65rem;
+}
+
+.nosub-replace-live-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-bottom: 0.7rem;
+}
+
+.nosub-replace-stat {
+  padding: 0.18rem 0.55rem;
+  border-radius: 999px;
+  background: var(--surface);
+  font-size: 0.78rem;
+}
+
+.nosub-replace-live-list {
+  margin-top: 0.75rem;
+  max-height: 360px;
+  overflow: auto;
+  display: grid;
+  gap: 0.4rem;
+}
+
+.nosub-replace-live-item {
+  display: grid;
+  gap: 0.2rem;
+  padding: 0.5rem 0.6rem;
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.nosub-replace-live-item-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.6rem;
+}
+
+.nosub-replace-live-item-title {
+  font-size: 0.86rem;
+  font-weight: 600;
+  word-break: break-all;
+}
+
+.nosub-replace-live-item-msg,
+.nosub-replace-live-item-path {
+  font-size: 0.78rem;
+  color: var(--muted);
+  word-break: break-all;
+}
+
+.nosub-replace-live-item.is-pending {
+  opacity: 0.78;
 }

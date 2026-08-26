@@ -3,6 +3,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
+from pathlib import Path
 
 from app import db
 from app.config import settings
@@ -17,6 +19,72 @@ from app.user_settings import merge_settings
 
 logger = logging.getLogger(__name__)
 _job_lock = asyncio.Lock()
+FOLDER_LOCK_SECONDS = 300
+_folder_locks_guard = threading.Lock()
+_folder_locks: dict[tuple[int, str], dict] = {}
+
+
+class FolderLockBusy(Exception):
+    pass
+
+
+def _normalize_folder_path(path: str) -> str:
+    text = (path or "").strip()
+    if not text:
+        return ""
+    return str(Path(text)).replace("\\", "/").rstrip("/") or "/"
+
+
+def _format_wait(seconds: float) -> str:
+    remaining = max(1, int(seconds))
+    minutes, secs = divmod(remaining, 60)
+    if minutes and secs:
+        return f"{minutes} 分 {secs} 秒"
+    if minutes:
+        return f"{minutes} 分钟"
+    return f"{secs} 秒"
+
+
+def try_acquire_folder_locks(user_id: int, folders: list[str]) -> list[str]:
+    keys: list[str] = []
+    seen: set[str] = set()
+    for folder in folders:
+        key = _normalize_folder_path(folder)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        keys.append(key)
+
+    now = time.monotonic()
+    with _folder_locks_guard:
+        for key in keys:
+            entry = _folder_locks.get((user_id, key))
+            if not entry:
+                continue
+            if entry.get("running"):
+                raise FolderLockBusy(f"「{key}」正在一键替换中，请等当前任务完成后再试")
+            remaining = float(entry.get("expire") or 0) - now
+            if remaining > 0:
+                raise FolderLockBusy(
+                    f"「{key}」5 分钟内已经执行过一键替换，请 {_format_wait(remaining)} 后再试"
+                )
+            _folder_locks.pop((user_id, key), None)
+        expire = now + FOLDER_LOCK_SECONDS
+        for key in keys:
+            _folder_locks[(user_id, key)] = {"running": True, "expire": expire}
+    return keys
+
+
+def release_folder_locks(user_id: int, keys: list[str]) -> None:
+    now = time.monotonic()
+    with _folder_locks_guard:
+        for key in keys:
+            entry = _folder_locks.get((user_id, key))
+            if not entry:
+                continue
+            entry["running"] = False
+            if float(entry.get("expire") or 0) <= now:
+                _folder_locks.pop((user_id, key), None)
 
 
 def _file_exists(path: str) -> bool:
@@ -226,12 +294,33 @@ async def run_replace_job_events(
             yield {"type": "error", "message": message, "job_id": job_id}
             return
 
+    counts = {
+        "replaced_count": 0,
+        "not_found_count": 0,
+        "push_failed_count": 0,
+        "error_count": 0,
+    }
+
+    def _counts_payload() -> dict:
+        return dict(counts)
+
+    def _bump_count(status: str) -> None:
+        key = {
+            "replaced": "replaced_count",
+            "not_found": "not_found_count",
+            "push_failed": "push_failed_count",
+            "error": "error_count",
+        }.get(status)
+        if key:
+            counts[key] += 1
+
     for message in meta.get("walk_errors") or []:
         recorded = _record_item(
             job_id,
             {"status": "error", "code": "", "name": "", "path": "", "message": message, "magnet_title": ""},
         )
-        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **recorded}
+        _bump_count("error")
+        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **_counts_payload(), **recorded}
 
     if meta.get("truncated") or meta.get("has_more"):
         recorded = _record_item(
@@ -245,7 +334,8 @@ async def run_replace_job_events(
                 "magnet_title": "",
             },
         )
-        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **recorded}
+        _bump_count("error")
+        yield {"type": "item", "job_id": job_id, "index": 0, "total": len(items), **_counts_payload(), **recorded}
 
     db.update_nosub_replace_job(
         job_id,
@@ -260,6 +350,7 @@ async def run_replace_job_events(
         "scanned": int(meta.get("scanned") or 0),
         "videos": int(meta.get("videos") or 0),
         "total": len(items),
+        **_counts_payload(),
     }
 
     if not items:
@@ -297,11 +388,13 @@ async def run_replace_job_events(
             except Exception as exc:
                 payload = _item_payload(item, status="error", message=f"处理失败: {exc}")
             recorded = _record_item(job_id, payload)
+            _bump_count(payload["status"])
             event = {
                 "type": "item",
                 "job_id": job_id,
                 "index": index,
                 "total": len(items),
+                **_counts_payload(),
                 **recorded,
             }
             yield event

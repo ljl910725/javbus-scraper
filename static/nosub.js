@@ -9,6 +9,14 @@ const nosubProgressEl = document.getElementById("nosubProgress");
 const nosubProgressFill = document.getElementById("nosubProgressFill");
 const nosubProgressText = document.getElementById("nosubProgressText");
 const nosubProgressPath = document.getElementById("nosubProgressPath");
+const nosubReplaceLiveEl = document.getElementById("nosubReplaceLive");
+const nosubReplaceLiveTitle = document.getElementById("nosubReplaceLiveTitle");
+const nosubReplaceLiveDetailBtn = document.getElementById("nosubReplaceLiveDetailBtn");
+const nosubReplaceLiveCounts = document.getElementById("nosubReplaceLiveCounts");
+const nosubReplaceLiveFill = document.getElementById("nosubReplaceLiveFill");
+const nosubReplaceLiveText = document.getElementById("nosubReplaceLiveText");
+const nosubReplaceLivePath = document.getElementById("nosubReplaceLivePath");
+const nosubReplaceLiveList = document.getElementById("nosubReplaceLiveList");
 const nosubFolderModal = document.getElementById("nosubFolderModal");
 const nosubFolderList = document.getElementById("nosubFolderList");
 const nosubFolderCurrentPath = document.getElementById("nosubFolderCurrentPath");
@@ -60,6 +68,8 @@ let nosubHasMore = false;
 let nosubView = "scan";
 let nosubReplaceRunning = false;
 let nosubIgnoredItems = [];
+let nosubReplaceLiveJob = null;
+let nosubReplaceLiveState = null;
 
 function currentNosubPageSize() {
   const value = Number(nosubPageSizeSelect?.value);
@@ -867,6 +877,7 @@ function nosubReplaceStatusLabel(status) {
     not_found: "未找到字幕",
     push_failed: "推送失败",
     error: "处理失败",
+    pending: "处理中",
     running: "进行中",
     done: "已完成",
     cancelled: "已取消",
@@ -980,6 +991,123 @@ async function openNosubReplaceJob(jobId) {
   }
 }
 
+function nosubReplaceBadgeClass(status) {
+  return {
+    replaced: "badge-sub",
+    not_found: "badge-site",
+    push_failed: "badge-fail",
+    error: "badge-fail",
+    pending: "badge-site",
+    running: "badge-site",
+    done: "badge-sub",
+    cancelled: "badge-site",
+  }[status] || "badge-site";
+}
+
+function resetNosubReplaceLive() {
+  nosubReplaceLiveJob = null;
+  nosubReplaceLiveState = {
+    phase: "scan",
+    status: "running",
+    title: "一键替换进行中",
+    text: "正在扫描无字幕文件...",
+    path: nosubSelectedFolders[0]?.path || "",
+    total: 0,
+    index: 0,
+    scanned: 0,
+    videos: 0,
+    percent: 0,
+    indeterminate: true,
+    counts: { replaced_count: 0, not_found_count: 0, push_failed_count: 0, error_count: 0 },
+    pending: null,
+    items: [],
+  };
+  nosubReplaceLiveDetailBtn?.classList.add("hidden");
+  nosubReplaceLiveEl?.classList.remove("is-done", "is-error");
+  renderNosubReplaceLive();
+}
+
+function updateNosubReplaceLiveCounts(event) {
+  if (!nosubReplaceLiveState) return;
+  nosubReplaceLiveState.counts = {
+    replaced_count: event.replaced_count ?? nosubReplaceLiveState.counts.replaced_count,
+    not_found_count: event.not_found_count ?? nosubReplaceLiveState.counts.not_found_count,
+    push_failed_count: event.push_failed_count ?? nosubReplaceLiveState.counts.push_failed_count,
+    error_count: event.error_count ?? nosubReplaceLiveState.counts.error_count,
+  };
+}
+
+function renderNosubReplaceLive() {
+  if (!nosubReplaceLiveEl || !nosubReplaceLiveState) return;
+  const state = nosubReplaceLiveState;
+  nosubReplaceLiveEl.classList.remove("hidden");
+  nosubReplaceLiveEl.classList.toggle("is-done", state.status === "done");
+  nosubReplaceLiveEl.classList.toggle("is-error", state.status === "error" || state.status === "cancelled");
+  if (nosubReplaceLiveTitle) nosubReplaceLiveTitle.textContent = state.title;
+  if (nosubReplaceLiveCounts) {
+    nosubReplaceLiveCounts.innerHTML = [
+      `<span class="nosub-replace-stat">成功 ${state.counts.replaced_count || 0}</span>`,
+      `<span class="nosub-replace-stat">未找到 ${state.counts.not_found_count || 0}</span>`,
+      `<span class="nosub-replace-stat">推送失败 ${state.counts.push_failed_count || 0}</span>`,
+      `<span class="nosub-replace-stat">其他失败 ${state.counts.error_count || 0}</span>`,
+    ].join("");
+  }
+  if (nosubReplaceLiveFill) {
+    if (state.indeterminate) {
+      nosubReplaceLiveFill.classList.add("is-indeterminate");
+      nosubReplaceLiveFill.style.width = "";
+    } else {
+      nosubReplaceLiveFill.classList.remove("is-indeterminate");
+      nosubReplaceLiveFill.style.width = `${Math.max(4, Math.min(100, Number(state.percent) || 0))}%`;
+    }
+  }
+  if (nosubReplaceLiveText) nosubReplaceLiveText.textContent = state.text || "";
+  if (nosubReplaceLivePath) nosubReplaceLivePath.textContent = state.path ? `当前：${state.path}` : "";
+  if (nosubReplaceLiveList) {
+    const rows = [];
+    if (state.pending) {
+      rows.push(renderNosubReplaceLiveItem(state.pending, true));
+    }
+    state.items.forEach((item) => rows.push(renderNosubReplaceLiveItem(item, false)));
+    nosubReplaceLiveList.innerHTML = rows.length
+      ? rows.join("")
+      : '<p class="nosub-report-empty">还没有处理结果，扫描完成后会逐条显示</p>';
+  }
+}
+
+function renderNosubReplaceLiveItem(item, pending) {
+  const label = item.code || item.name || item.path || "未命名";
+  const extraName = item.name && item.name !== label ? item.name : "";
+  return `
+    <article class="nosub-replace-live-item${pending ? " is-pending" : ""}">
+      <div class="nosub-replace-live-item-main">
+        <span class="nosub-replace-live-item-title">${escapeHtml(label)}${extraName ? escapeHtml(`（${extraName}）`) : ""}</span>
+        <span class="badge ${nosubReplaceBadgeClass(item.status)}">${escapeHtml(nosubReplaceStatusLabel(item.status))}</span>
+      </div>
+      ${item.message ? `<div class="nosub-replace-live-item-msg">${escapeHtml(item.message)}</div>` : ""}
+      ${item.path ? `<div class="nosub-replace-live-item-path">${escapeHtml(item.path)}</div>` : ""}
+    </article>`;
+}
+
+function finishNosubReplaceLive(status, text, job = null) {
+  if (!nosubReplaceLiveState) resetNosubReplaceLive();
+  nosubReplaceLiveJob = job;
+  nosubReplaceLiveState.status = status;
+  nosubReplaceLiveState.phase = "done";
+  nosubReplaceLiveState.indeterminate = false;
+  nosubReplaceLiveState.percent = status === "done" ? 100 : nosubReplaceLiveState.percent;
+  nosubReplaceLiveState.pending = null;
+  nosubReplaceLiveState.path = "";
+  nosubReplaceLiveState.title =
+    status === "done" ? "一键替换完成" : status === "cancelled" ? "一键替换已取消" : "一键替换失败";
+  nosubReplaceLiveState.text = text;
+  if (job) {
+    updateNosubReplaceLiveCounts(job);
+  }
+  nosubReplaceLiveDetailBtn?.classList.toggle("hidden", !job);
+  renderNosubReplaceLive();
+}
+
 function setNosubReplaceBusy(busy) {
   nosubReplaceRunning = busy;
   if (nosubReplaceBtn) nosubReplaceBtn.disabled = busy;
@@ -1006,7 +1134,7 @@ async function runNosubReplace() {
   const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
   const ok = await showAppConfirm({
     title: "一键替换无字幕文件",
-    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 115 并删除现在的文件；没找到就跳过。推送失败会弹出提示，全部结果会写入执行记录。`,
+    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 115 并删除现在的文件；没找到就跳过。同一文件夹 5 分钟内不能再执行一次。页面会实时显示每个文件的处理结果。`,
     confirmText: "开始替换",
     danger: true,
   });
@@ -1016,19 +1144,9 @@ async function runNosubReplace() {
   nosubAbort = new AbortController();
   setNosubReplaceBusy(true);
   setNosubView("scan");
-  showNosubProgress({
-    phase: "starting",
-    scanned: 0,
-    videos: 0,
-    dirs: 0,
-    folder_index: 0,
-    folder_total: nosubSelectedFolders.length,
-    current_dir: nosubSelectedFolders[0]?.path || "",
-    found: 0,
-    page_found: 0,
-    percent: 0,
-  });
-  setNosubStatus("正在扫描无字幕文件...", false, true);
+  hideNosubProgress();
+  resetNosubReplaceLive();
+  setNosubStatus("正在一键替换，页面会实时显示每个文件的结果", false, true);
 
   let finalJob = null;
   try {
@@ -1041,42 +1159,86 @@ async function runNosubReplace() {
     });
     if (!res.ok) {
       const data = await res.json().catch(() => ({}));
-      throw new Error(data.detail || "一键替换失败");
+      const detail = data.detail;
+      throw new Error(typeof detail === "string" ? detail : "一键替换失败");
     }
     await readSseJson(res, (event) => {
+      if (!nosubReplaceLiveState) return;
+      if (event.type === "job") {
+        nosubReplaceLiveJob = event.job || { id: event.job_id };
+        return;
+      }
       if (event.type === "progress") {
-        showNosubProgress(event);
-        setNosubStatus("正在扫描无字幕文件...", false, true);
+        nosubReplaceLiveState.phase = "scan";
+        nosubReplaceLiveState.scanned = event.scanned || 0;
+        nosubReplaceLiveState.videos = event.videos || 0;
+        nosubReplaceLiveState.path = event.current_dir || "";
+        nosubReplaceLiveState.indeterminate = true;
+        nosubReplaceLiveState.text = `正在扫描目录 · 已扫 ${event.scanned || 0} 项 · 视频 ${event.videos || 0} 个 · 无字幕 ${event.found || event.page_found || 0} 个`;
+        renderNosubReplaceLive();
+        setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
       if (event.type === "scan_done") {
-        showNosubProgress({
-          ...event,
-          phase: "replacing",
-          found: event.total,
-          page_found: event.total,
-          percent: event.total ? 5 : 100,
-          current_dir: "",
-        });
-        setNosubStatus(`扫描完成，开始处理 ${event.total} 个文件`, false, true);
+        updateNosubReplaceLiveCounts(event);
+        nosubReplaceLiveState.phase = "replace";
+        nosubReplaceLiveState.total = event.total || 0;
+        nosubReplaceLiveState.scanned = event.scanned || 0;
+        nosubReplaceLiveState.videos = event.videos || 0;
+        nosubReplaceLiveState.indeterminate = !event.total;
+        nosubReplaceLiveState.percent = event.total ? 2 : 100;
+        nosubReplaceLiveState.path = "";
+        nosubReplaceLiveState.text = event.total
+          ? `扫描完成，开始处理 ${event.total} 个无字幕文件`
+          : "扫描完成，没有找到无字幕文件";
+        renderNosubReplaceLive();
+        setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
       if (event.type === "item_start") {
-        const percent = event.total ? Math.min(99, Math.round((event.index / event.total) * 100)) : 50;
-        showNosubProgress({
-          phase: "replacing",
-          scanned: event.index,
-          videos: event.total,
-          found: event.index,
-          page_found: event.total,
-          percent,
-          current_dir: event.path || event.name || "",
-        });
-        setNosubStatus(`正在处理 ${event.index}/${event.total} ${event.code || event.name || ""}`, false, true);
+        nosubReplaceLiveState.phase = "replace";
+        nosubReplaceLiveState.index = event.index || 0;
+        nosubReplaceLiveState.total = event.total || nosubReplaceLiveState.total;
+        nosubReplaceLiveState.indeterminate = false;
+        nosubReplaceLiveState.percent = nosubReplaceLiveState.total
+          ? Math.min(99, Math.round(((event.index - 1) / nosubReplaceLiveState.total) * 100))
+          : 50;
+        nosubReplaceLiveState.path = event.path || "";
+        nosubReplaceLiveState.pending = {
+          status: "pending",
+          code: event.code || "",
+          name: event.name || "",
+          path: event.path || "",
+          message: "正在查询字幕并推送 115",
+        };
+        nosubReplaceLiveState.text = `正在处理 ${event.index}/${event.total} ${event.code || event.name || ""}`;
+        renderNosubReplaceLive();
+        setNosubStatus(nosubReplaceLiveState.text, false, true);
         return;
       }
-      if (event.type === "item" && event.status === "replaced") {
-        removeNosubItemFromView(event.path);
+      if (event.type === "item") {
+        updateNosubReplaceLiveCounts(event);
+        nosubReplaceLiveState.pending = null;
+        nosubReplaceLiveState.index = event.index || nosubReplaceLiveState.index;
+        nosubReplaceLiveState.total = event.total || nosubReplaceLiveState.total;
+        nosubReplaceLiveState.indeterminate = false;
+        nosubReplaceLiveState.percent = nosubReplaceLiveState.total
+          ? Math.min(99, Math.round((nosubReplaceLiveState.index / nosubReplaceLiveState.total) * 100))
+          : 100;
+        nosubReplaceLiveState.items.unshift({
+          status: event.status,
+          code: event.code || "",
+          name: event.name || "",
+          path: event.path || "",
+          message: event.message || "",
+        });
+        nosubReplaceLiveState.text = `已处理 ${nosubReplaceLiveState.index}/${nosubReplaceLiveState.total} · 成功 ${nosubReplaceLiveState.counts.replaced_count} · 未找到 ${nosubReplaceLiveState.counts.not_found_count} · 失败 ${nosubReplaceLiveState.counts.push_failed_count + nosubReplaceLiveState.counts.error_count}`;
+        renderNosubReplaceLive();
+        setNosubStatus(nosubReplaceLiveState.text, false, true);
+        if (event.status === "replaced") {
+          removeNosubItemFromView(event.path);
+        }
+        return;
       }
       if (event.type === "toast") {
         showToast(event.message, { type: event.kind || "error" });
@@ -1095,8 +1257,10 @@ async function runNosubReplace() {
     });
   } catch (err) {
     if (err.name === "AbortError") {
+      finishNosubReplaceLive("cancelled", "已取消一键替换", nosubReplaceLiveJob);
       setNosubStatus("已取消一键替换");
     } else {
+      finishNosubReplaceLive("error", err.message || "一键替换失败", nosubReplaceLiveJob);
       setNosubStatus(err.message || "一键替换失败", true);
       showToast(err.message || "一键替换失败", { type: "error" });
     }
@@ -1110,13 +1274,14 @@ async function runNosubReplace() {
   setNosubReplaceBusy(false);
   if (nosubCancelBtn) nosubCancelBtn.textContent = "取消扫描";
   if (!finalJob) {
+    finishNosubReplaceLive("error", "一键替换结束，但没有返回记录", nosubReplaceLiveJob);
     setNosubStatus("一键替换结束，但没有返回记录", true);
     return;
   }
-  setNosubStatus(
-    `一键替换完成：成功 ${finalJob.replaced_count || 0}，未找到 ${finalJob.not_found_count || 0}，推送失败 ${finalJob.push_failed_count || 0}，其他失败 ${finalJob.error_count || 0}`
-  );
-  openNosubReplaceReport(finalJob);
+  const summary = `一键替换完成：成功 ${finalJob.replaced_count || 0}，未找到 ${finalJob.not_found_count || 0}，推送失败 ${finalJob.push_failed_count || 0}，其他失败 ${finalJob.error_count || 0}`;
+  finishNosubReplaceLive("done", summary, finalJob);
+  setNosubStatus(summary);
+  showToast(summary, { type: (finalJob.push_failed_count || finalJob.error_count) ? "error" : "success", timeout: 6400 });
 }
 
 function afterNosubPushSuccess() {
@@ -1138,6 +1303,15 @@ nosubClearFoldersBtn?.addEventListener("click", () => {
 });
 nosubScanBtn?.addEventListener("click", () => scanMissingSubs(1, { reset: true }));
 nosubReplaceBtn?.addEventListener("click", () => runNosubReplace());
+nosubReplaceLiveDetailBtn?.addEventListener("click", () => {
+  if (nosubReplaceLiveJob?.items) {
+    openNosubReplaceReport(nosubReplaceLiveJob);
+    return;
+  }
+  if (nosubReplaceLiveJob?.id) {
+    openNosubReplaceJob(nosubReplaceLiveJob.id);
+  }
+});
 nosubPageSizeSelect?.addEventListener("change", () => {
   nosubPageSize = currentNosubPageSize();
   if (!nosubSelectedFolders.length) return;

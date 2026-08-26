@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JavBus 番号爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=26082611" />
+  <link rel="stylesheet" href="/static/style.css?v=26082612" />
 </head>
 <body>
   <div class="container">
@@ -76,11 +76,24 @@
 
     <div id="tabNosub" class="tab-panel hidden" data-tab-panel="nosub">
     <section class="dup-panel">
-      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现。也可以一键把目录里所有无字幕文件查一遍，有字幕就推送 115 并删除原文件。</p>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现。也可以一键把目录里所有无字幕文件查一遍，有字幕就推送 115 并删除原文件。同一文件夹 5 分钟内不能重复执行一键替换。</p>
       <div class="nosub-views">
         <button id="nosubViewScanBtn" class="app-tab active" type="button" data-nosub-view="scan">排查结果</button>
         <button id="nosubViewIgnoredBtn" class="app-tab" type="button" data-nosub-view="ignored">忽略列表</button>
         <button id="nosubViewLogsBtn" class="app-tab" type="button" data-nosub-view="logs">执行记录</button>
+      </div>
+      <div id="nosubReplaceLive" class="nosub-replace-live hidden">
+        <div class="nosub-replace-live-header">
+          <strong id="nosubReplaceLiveTitle">一键替换进行中</strong>
+          <button id="nosubReplaceLiveDetailBtn" class="ghost-btn hidden" type="button">查看完整记录</button>
+        </div>
+        <div id="nosubReplaceLiveCounts" class="nosub-replace-live-counts"></div>
+        <div class="dup-progress-track">
+          <div id="nosubReplaceLiveFill" class="dup-progress-fill"></div>
+        </div>
+        <div id="nosubReplaceLiveText" class="dup-progress-text"></div>
+        <div id="nosubReplaceLivePath" class="dup-progress-path"></div>
+        <div id="nosubReplaceLiveList" class="nosub-replace-live-list"></div>
       </div>
       <div id="nosubScanView">
       <div id="nosubSelectedFolders" class="dup-chips"></div>
@@ -394,11 +407,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26082611"></script>
-  <script src="/static/nav.js?v=26082611"></script>
-  <script src="/static/app.js?v=26082611"></script>
-  <script src="/static/duplicates.js?v=26082611"></script>
-  <script src="/static/nosub.js?v=26082611"></script>
-  <script src="/static/cleanup.js?v=26082611"></script>
+  <script src="/static/auth.js?v=26082612"></script>
+  <script src="/static/nav.js?v=26082612"></script>
+  <script src="/static/app.js?v=26082612"></script>
+  <script src="/static/duplicates.js?v=26082612"></script>
+  <script src="/static/nosub.js?v=26082612"></script>
+  <script src="/static/cleanup.js?v=26082612"></script>
 </body>
 </html>

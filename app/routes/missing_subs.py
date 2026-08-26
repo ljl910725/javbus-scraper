@@ -25,7 +25,7 @@ from app.models import (
     NosubReplaceItem,
     NosubReplaceRequest,
 )
-from app.replace_job import run_replace_job_events
+from app.replace_job import FolderLockBusy, release_folder_locks, run_replace_job_events, try_acquire_folder_locks
 from app.subtitles.storage import resolve_file
 
 router = APIRouter(prefix="/api/missing-subs")
@@ -219,7 +219,20 @@ async def replace_missing_subs_stream(body: NosubReplaceRequest, request: Reques
     if not body.folders:
         raise HTTPException(status_code=400, detail="请至少选择一个文件夹")
 
+    try:
+        lock_keys = try_acquire_folder_locks(user["id"], body.folders)
+    except FolderLockBusy as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
     stop = threading.Event()
+    released = False
+
+    def release_once() -> None:
+        nonlocal released
+        if released:
+            return
+        released = True
+        release_folder_locks(user["id"], lock_keys)
 
     async def disconnected() -> bool:
         return await request.is_disconnected()
@@ -232,11 +245,13 @@ async def replace_missing_subs_stream(body: NosubReplaceRequest, request: Reques
                 stop=stop,
                 request_disconnected=disconnected,
             ):
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                payload = json.dumps(event, ensure_ascii=False)
+                yield f"data: {payload}\n\n:{' ' * 1024}\n\n"
                 if event.get("type") in {"done", "error", "cancelled"}:
                     break
         finally:
             stop.set()
+            release_once()
 
     return StreamingResponse(
         event_gen(),
