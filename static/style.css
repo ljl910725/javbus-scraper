@@ -1922,6 +1922,10 @@ button:disabled {
   word-break: break-all;
 }
 
+.nosub-filesize {
+  font-variant-numeric: tabular-nums;
+}
+
 .nosub-card {
   cursor: default;
 }

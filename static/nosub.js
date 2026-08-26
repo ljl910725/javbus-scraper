@@ -221,11 +221,15 @@ function renderNosubItem(item) {
   const codeLabel = item.code || "未识别番号";
   const partLabel = item.part ? ` · ${item.part}` : "";
   const title = item.title || item.name || "未知标题";
+  const sizeText = formatNosubBytes(item.size);
   const dateText = item.date
     ? `<span class="fuzzy-date">${escapeHtml(item.date)}</span>`
     : "";
   const studioText = item.studio
     ? `<span class="fuzzy-date">${escapeHtml(item.studio)}</span>`
+    : "";
+  const sizeHtml = sizeText
+    ? `<span class="fuzzy-date nosub-filesize">${escapeHtml(sizeText)}</span>`
     : "";
   return `
     <article class="fuzzy-item list-item nosub-card" data-path="${escapeAttr(item.path)}" data-gallery="${encodeGallery(nosubGallery(item))}">
@@ -241,6 +245,7 @@ function renderNosubItem(item) {
         <div class="fuzzy-title">${escapeHtml(title)}</div>
         ${dateText}
         ${studioText}
+        ${sizeHtml}
         <div class="nosub-filename" title="${escapeAttr(item.path)}">${escapeHtml(item.name)}</div>
         <div class="list-item-actions">
           <button class="nosub-lookup-btn ghost-btn" type="button" data-path="${escapeAttr(item.path)}">查找</button>
