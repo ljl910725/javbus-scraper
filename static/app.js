@@ -1819,7 +1819,11 @@ p115PushAllBtn?.addEventListener("click", async () => {
     setP115PasteStatus("115 未就绪，请先在配置页填写 Cookie 并选择保存目录", true);
     return;
   }
-  const ok = window.confirm(`确定把 ${links.length} 条磁力整条推送到 115${p115FolderPath ? `\n${p115FolderPath}` : ""}？\n不会弹出选文件，整条任务都会下。`);
+  const ok = await showAppConfirm({
+    title: "推送到 115",
+    message: `确定把 ${links.length} 条磁力整条推送到 115${p115FolderPath ? `\n${p115FolderPath}` : ""}？\n不会弹出选文件，整条任务都会下。`,
+    confirmText: "推送",
+  });
   if (!ok) return;
   p115ParseBtn.disabled = true;
   p115PushAllBtn.disabled = true;

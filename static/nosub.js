@@ -27,8 +27,19 @@ const nosubPageSizeSelect = document.getElementById("nosubPageSizeSelect");
 const nosubPagerEl = document.getElementById("nosubPager");
 const nosubViewScanBtn = document.getElementById("nosubViewScanBtn");
 const nosubViewIgnoredBtn = document.getElementById("nosubViewIgnoredBtn");
+const nosubViewLogsBtn = document.getElementById("nosubViewLogsBtn");
 const nosubScanView = document.getElementById("nosubScanView");
 const nosubIgnoredView = document.getElementById("nosubIgnoredView");
+const nosubLogsView = document.getElementById("nosubLogsView");
+const nosubReplaceBtn = document.getElementById("nosubReplaceBtn");
+const nosubLogsRefreshBtn = document.getElementById("nosubLogsRefreshBtn");
+const nosubLogsStatusEl = document.getElementById("nosubLogsStatus");
+const nosubLogsResultsEl = document.getElementById("nosubLogsResults");
+const nosubReplaceReportModal = document.getElementById("nosubReplaceReportModal");
+const nosubReplaceReportTitle = document.getElementById("nosubReplaceReportTitle");
+const nosubReplaceReportSummary = document.getElementById("nosubReplaceReportSummary");
+const nosubReplaceReportBody = document.getElementById("nosubReplaceReportBody");
+const closeNosubReplaceReportBtn = document.getElementById("closeNosubReplaceReportBtn");
 const nosubIgnoredRefreshBtn = document.getElementById("nosubIgnoredRefreshBtn");
 const nosubIgnoredCheckBtn = document.getElementById("nosubIgnoredCheckBtn");
 const nosubIgnoredStatusEl = document.getElementById("nosubIgnoredStatus");
@@ -47,6 +58,7 @@ let nosubPageSize = 10;
 let nosubPageCache = new Map();
 let nosubHasMore = false;
 let nosubView = "scan";
+let nosubReplaceRunning = false;
 let nosubIgnoredItems = [];
 
 function currentNosubPageSize() {
@@ -313,6 +325,10 @@ function showNosubProgress(event) {
 }
 
 async function scanMissingSubs(page = 1, { reset = false } = {}) {
+  if (nosubReplaceRunning) {
+    setNosubStatus("正在一键替换，请先取消或等它完成", true);
+    return;
+  }
   if (!isLoggedIn()) {
     setNosubStatus("排查无字幕文件需要先登录", true);
     openAuthModal("login");
@@ -471,7 +487,12 @@ async function deleteNosubFile(button, path, name) {
     openAuthModal("login");
     return;
   }
-  const ok = window.confirm(`确定删除这个视频文件？\n${name}\n${path}`);
+  const ok = await showAppConfirm({
+    title: "删除原文件",
+    message: `确定删除这个视频文件？\n${name}\n${path}`,
+    confirmText: "删除",
+    danger: true,
+  });
   if (!ok) return;
 
   if (button) button.disabled = true;
@@ -500,9 +521,11 @@ async function ignoreNosubFile(button, item) {
     return;
   }
   if (!item?.path) return;
-  const ok = window.confirm(
-    `忽略后下次排查不再显示这个文件。\n每天凌晨 4 点会搜索带字幕版本，找到后推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`
-  );
+  const ok = await showAppConfirm({
+    title: "忽略这个文件",
+    message: `忽略后下次排查不再显示这个文件。\n每天凌晨 4 点会搜索带字幕版本，找到后推送到 115 并删除原文件。\n\n${item.name}\n${item.path}`,
+    confirmText: "忽略",
+  });
   if (!ok) return;
 
   if (button) button.disabled = true;
@@ -551,12 +574,15 @@ function formatNosubBytes(value) {
 }
 
 function setNosubView(view) {
-  nosubView = view === "ignored" ? "ignored" : "scan";
+  nosubView = view === "ignored" || view === "logs" ? view : "scan";
   nosubScanView?.classList.toggle("hidden", nosubView !== "scan");
   nosubIgnoredView?.classList.toggle("hidden", nosubView !== "ignored");
+  nosubLogsView?.classList.toggle("hidden", nosubView !== "logs");
   nosubViewScanBtn?.classList.toggle("active", nosubView === "scan");
   nosubViewIgnoredBtn?.classList.toggle("active", nosubView === "ignored");
+  nosubViewLogsBtn?.classList.toggle("active", nosubView === "logs");
   if (nosubView === "ignored") loadNosubIgnoredList();
+  if (nosubView === "logs") loadNosubReplaceLogs();
 }
 
 function renderNosubIgnoredItem(item) {
@@ -827,6 +853,272 @@ async function lookupNosubItem(item) {
   setNosubLookupStatus(lastError || `未找到 ${code}`, true);
 }
 
+function setNosubLogsStatus(message, isError = false, loading = false) {
+  if (!nosubLogsStatusEl) return;
+  nosubLogsStatusEl.textContent = message || "";
+  nosubLogsStatusEl.classList.toggle("hidden", !message);
+  nosubLogsStatusEl.classList.toggle("error", Boolean(isError));
+  nosubLogsStatusEl.classList.toggle("loading", Boolean(loading));
+}
+
+function nosubReplaceStatusLabel(status) {
+  return {
+    replaced: "替换成功",
+    not_found: "未找到字幕",
+    push_failed: "推送失败",
+    error: "处理失败",
+    running: "进行中",
+    done: "已完成",
+    cancelled: "已取消",
+  }[status] || status || "未知";
+}
+
+function renderNosubReplaceSection(title, items, emptyText) {
+  const rows = (items || [])
+    .map((item) => {
+      const label = item.code || item.name || item.path || "未命名";
+      const extra = item.message ? ` — ${item.message}` : "";
+      const name = item.name && item.name !== label ? `（${item.name}）` : "";
+      return `<li><strong>${escapeHtml(label)}</strong>${escapeHtml(name)}${escapeHtml(extra)}</li>`;
+    })
+    .join("");
+  return `
+    <section class="nosub-report-section">
+      <h3>${escapeHtml(title)}（${items.length}）</h3>
+      ${
+        items.length
+          ? `<ul class="nosub-report-list">${rows}</ul>`
+          : `<p class="nosub-report-empty">${escapeHtml(emptyText)}</p>`
+      }
+    </section>`;
+}
+
+function openNosubReplaceReport(job) {
+  if (!job || !nosubReplaceReportModal) return;
+  const replaced = (job.items || []).filter((item) => item.status === "replaced");
+  const notFound = (job.items || []).filter((item) => item.status === "not_found");
+  const pushFailed = (job.items || []).filter((item) => item.status === "push_failed");
+  const errors = (job.items || []).filter((item) => item.status === "error");
+  if (nosubReplaceReportTitle) {
+    nosubReplaceReportTitle.textContent = `一键替换记录 #${job.id}`;
+  }
+  if (nosubReplaceReportSummary) {
+    nosubReplaceReportSummary.textContent = `${nosubReplaceStatusLabel(job.status)} · 扫描 ${job.scanned || 0} 项，视频 ${job.videos || 0} 个，待处理 ${job.total || 0} 个。成功 ${job.replaced_count || replaced.length}，未找到 ${job.not_found_count || notFound.length}，推送失败 ${job.push_failed_count || pushFailed.length}，其他失败 ${job.error_count || errors.length}。`;
+  }
+  if (nosubReplaceReportBody) {
+    nosubReplaceReportBody.innerHTML = [
+      renderNosubReplaceSection("替换成功", replaced, "没有替换成功的文件"),
+      renderNosubReplaceSection("没有找到字幕", notFound, "没有未找到字幕的文件"),
+      renderNosubReplaceSection("推送115失败", pushFailed, "没有推送失败的文件"),
+      renderNosubReplaceSection("其他失败", errors, "没有其他失败"),
+    ].join("");
+  }
+  nosubReplaceReportModal.classList.remove("hidden");
+}
+
+function closeNosubReplaceReport() {
+  nosubReplaceReportModal?.classList.add("hidden");
+}
+
+function renderNosubReplaceLogs(jobs) {
+  if (!nosubLogsResultsEl) return;
+  if (!jobs.length) {
+    nosubLogsResultsEl.innerHTML = '<p class="folder-empty">还没有一键替换记录</p>';
+    return;
+  }
+  nosubLogsResultsEl.innerHTML = jobs
+    .map((job) => `
+      <article class="fuzzy-item list-item nosub-card nosub-log-card" data-job-id="${job.id}">
+        <div class="fuzzy-info">
+          <div class="fuzzy-code-row">
+            <span class="fuzzy-code">记录 #${job.id}</span>
+            <span class="badge ${job.status === "done" ? "badge-sub" : "badge-site"}">${escapeHtml(nosubReplaceStatusLabel(job.status))}</span>
+          </div>
+          <div class="fuzzy-title">${escapeHtml(job.message || "一键替换")}</div>
+          <div class="nosub-log-counts">
+            <span>开始 ${escapeHtml(job.started_at || "-")}</span>
+            <span>成功 ${job.replaced_count || 0}</span>
+            <span>未找到 ${job.not_found_count || 0}</span>
+            <span>推送失败 ${job.push_failed_count || 0}</span>
+            <span>其他失败 ${job.error_count || 0}</span>
+          </div>
+        </div>
+      </article>`)
+    .join("");
+}
+
+async function loadNosubReplaceLogs() {
+  if (!isLoggedIn()) {
+    setNosubLogsStatus("查看执行记录需要先登录", true);
+    openAuthModal("login");
+    return;
+  }
+  setNosubLogsStatus("正在加载执行记录...", false, true);
+  try {
+    const res = await authFetch("/api/missing-subs/replace/jobs");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "加载失败");
+    const jobs = data.items || [];
+    renderNosubReplaceLogs(jobs);
+    setNosubLogsStatus(jobs.length ? `共 ${jobs.length} 条执行记录，点击查看详情` : "还没有一键替换记录");
+  } catch (err) {
+    setNosubLogsStatus(err.message || "加载失败", true);
+  }
+}
+
+async function openNosubReplaceJob(jobId) {
+  setNosubLogsStatus(`正在加载记录 #${jobId}...`, false, true);
+  try {
+    const res = await authFetch(`/api/missing-subs/replace/jobs/${jobId}`);
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || "加载失败");
+    openNosubReplaceReport(data);
+    setNosubLogsStatus("");
+  } catch (err) {
+    setNosubLogsStatus(err.message || "加载失败", true);
+    showToast(err.message || "加载执行记录失败", { type: "error" });
+  }
+}
+
+function setNosubReplaceBusy(busy) {
+  nosubReplaceRunning = busy;
+  if (nosubReplaceBtn) nosubReplaceBtn.disabled = busy;
+  if (nosubScanBtn) nosubScanBtn.disabled = busy;
+  if (nosubCancelBtn) {
+    nosubCancelBtn.classList.toggle("hidden", !busy);
+    nosubCancelBtn.textContent = busy ? "取消替换" : "取消扫描";
+  }
+}
+
+async function runNosubReplace() {
+  if (!isLoggedIn()) {
+    openAuthModal("login");
+    return;
+  }
+  if (!nosubSelectedFolders.length) {
+    setNosubStatus("请先选择文件夹", true);
+    return;
+  }
+  if (typeof p115Ready !== "undefined" && !p115Ready) {
+    showToast("还没有配置 115 Cookie，无法一键替换", { type: "error" });
+    return;
+  }
+  const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
+  const ok = await showAppConfirm({
+    title: "一键替换无字幕文件",
+    message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n如果接口里有带字幕磁力，会推送到 115 并删除现在的文件；没找到就跳过。推送失败会弹出提示，全部结果会写入执行记录。`,
+    confirmText: "开始替换",
+    danger: true,
+  });
+  if (!ok) return;
+
+  nosubAbort?.abort();
+  nosubAbort = new AbortController();
+  setNosubReplaceBusy(true);
+  setNosubView("scan");
+  showNosubProgress({
+    phase: "starting",
+    scanned: 0,
+    videos: 0,
+    dirs: 0,
+    folder_index: 0,
+    folder_total: nosubSelectedFolders.length,
+    current_dir: nosubSelectedFolders[0]?.path || "",
+    found: 0,
+    page_found: 0,
+    percent: 0,
+  });
+  setNosubStatus("正在扫描无字幕文件...", false, true);
+
+  let finalJob = null;
+  try {
+    const res = await authFetch("/api/missing-subs/replace/stream", {
+      method: "POST",
+      body: JSON.stringify({
+        folders: nosubSelectedFolders.map((item) => item.path),
+      }),
+      signal: nosubAbort.signal,
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "一键替换失败");
+    }
+    await readSseJson(res, (event) => {
+      if (event.type === "progress") {
+        showNosubProgress(event);
+        setNosubStatus("正在扫描无字幕文件...", false, true);
+        return;
+      }
+      if (event.type === "scan_done") {
+        showNosubProgress({
+          ...event,
+          phase: "replacing",
+          found: event.total,
+          page_found: event.total,
+          percent: event.total ? 5 : 100,
+          current_dir: "",
+        });
+        setNosubStatus(`扫描完成，开始处理 ${event.total} 个文件`, false, true);
+        return;
+      }
+      if (event.type === "item_start") {
+        const percent = event.total ? Math.min(99, Math.round((event.index / event.total) * 100)) : 50;
+        showNosubProgress({
+          phase: "replacing",
+          scanned: event.index,
+          videos: event.total,
+          found: event.index,
+          page_found: event.total,
+          percent,
+          current_dir: event.path || event.name || "",
+        });
+        setNosubStatus(`正在处理 ${event.index}/${event.total} ${event.code || event.name || ""}`, false, true);
+        return;
+      }
+      if (event.type === "item" && event.status === "replaced") {
+        removeNosubItemFromView(event.path);
+      }
+      if (event.type === "toast") {
+        showToast(event.message, { type: event.kind || "error" });
+        return;
+      }
+      if (event.type === "done") {
+        finalJob = event.job;
+        return;
+      }
+      if (event.type === "cancelled") {
+        throw new DOMException("已取消一键替换", "AbortError");
+      }
+      if (event.type === "error") {
+        throw new Error(event.message || "一键替换失败");
+      }
+    });
+  } catch (err) {
+    if (err.name === "AbortError") {
+      setNosubStatus("已取消一键替换");
+    } else {
+      setNosubStatus(err.message || "一键替换失败", true);
+      showToast(err.message || "一键替换失败", { type: "error" });
+    }
+    hideNosubProgress();
+    setNosubReplaceBusy(false);
+    if (nosubCancelBtn) nosubCancelBtn.textContent = "取消扫描";
+    return;
+  }
+
+  hideNosubProgress();
+  setNosubReplaceBusy(false);
+  if (nosubCancelBtn) nosubCancelBtn.textContent = "取消扫描";
+  if (!finalJob) {
+    setNosubStatus("一键替换结束，但没有返回记录", true);
+    return;
+  }
+  setNosubStatus(
+    `一键替换完成：成功 ${finalJob.replaced_count || 0}，未找到 ${finalJob.not_found_count || 0}，推送失败 ${finalJob.push_failed_count || 0}，其他失败 ${finalJob.error_count || 0}`
+  );
+  openNosubReplaceReport(finalJob);
+}
+
 function afterNosubPushSuccess() {
   return async () => {
     if (pendingNosubItem) {
@@ -845,6 +1137,7 @@ nosubClearFoldersBtn?.addEventListener("click", () => {
   setNosubStatus("");
 });
 nosubScanBtn?.addEventListener("click", () => scanMissingSubs(1, { reset: true }));
+nosubReplaceBtn?.addEventListener("click", () => runNosubReplace());
 nosubPageSizeSelect?.addEventListener("change", () => {
   nosubPageSize = currentNosubPageSize();
   if (!nosubSelectedFolders.length) return;
@@ -1119,6 +1412,14 @@ nosubLookupModal?.addEventListener("click", (event) => {
 
 nosubViewScanBtn?.addEventListener("click", () => setNosubView("scan"));
 nosubViewIgnoredBtn?.addEventListener("click", () => setNosubView("ignored"));
+nosubViewLogsBtn?.addEventListener("click", () => setNosubView("logs"));
+nosubLogsRefreshBtn?.addEventListener("click", () => loadNosubReplaceLogs());
+closeNosubReplaceReportBtn?.addEventListener("click", closeNosubReplaceReport);
+nosubLogsResultsEl?.addEventListener("click", (event) => {
+  const card = event.target.closest("[data-job-id]");
+  if (!card) return;
+  openNosubReplaceJob(card.dataset.jobId);
+});
 nosubIgnoredRefreshBtn?.addEventListener("click", () => loadNosubIgnoredList());
 nosubIgnoredCheckBtn?.addEventListener("click", (event) => {
   checkNosubIgnored(event.currentTarget);

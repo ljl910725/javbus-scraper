@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JavBus 番号爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=2608269" />
+  <link rel="stylesheet" href="/static/style.css?v=26082610" />
 </head>
 <body>
   <div class="container">
@@ -76,10 +76,11 @@
 
     <div id="tabNosub" class="tab-panel hidden" data-tab-panel="nosub">
     <section class="dup-panel">
-      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现，每天凌晨 4 点会自动搜索带字幕版本并推送到 115。</p>
+      <p class="field-hint">选择目录后递归查找文件名里没有独立 -C 的视频。默认扫满一页就停，可翻到下一页继续。-cd1 / -cd2 不会被当成有字幕。忽略的文件下次排查不再出现，每天凌晨 4 点会自动搜索带字幕版本并推送到 115。也可以一键把目录里所有无字幕文件查一遍，有字幕就推送 115 并删除原文件。</p>
       <div class="nosub-views">
         <button id="nosubViewScanBtn" class="app-tab active" type="button" data-nosub-view="scan">排查结果</button>
         <button id="nosubViewIgnoredBtn" class="app-tab" type="button" data-nosub-view="ignored">忽略列表</button>
+        <button id="nosubViewLogsBtn" class="app-tab" type="button" data-nosub-view="logs">执行记录</button>
       </div>
       <div id="nosubScanView">
       <div id="nosubSelectedFolders" class="dup-chips"></div>
@@ -97,6 +98,7 @@
           <span>条</span>
         </label>
         <button id="nosubScanBtn" type="button">开始排查</button>
+        <button id="nosubReplaceBtn" type="button">一键替换</button>
         <button id="nosubCancelBtn" class="ghost-btn hidden" type="button">取消扫描</button>
       </div>
       <div id="nosubProgress" class="dup-progress hidden">
@@ -118,6 +120,14 @@
         </div>
         <div id="nosubIgnoredStatus" class="status hidden"></div>
         <div id="nosubIgnoredResults" class="nosub-results"></div>
+      </div>
+      <div id="nosubLogsView" class="hidden">
+        <p class="field-hint">一键替换的历史记录。每次会列出替换成功、没找到字幕、推送失败和其他错误。</p>
+        <div class="options">
+          <button id="nosubLogsRefreshBtn" class="ghost-btn" type="button">刷新记录</button>
+        </div>
+        <div id="nosubLogsStatus" class="status hidden"></div>
+        <div id="nosubLogsResults" class="nosub-results"></div>
       </div>
     </section>
     </div>
@@ -373,11 +383,22 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=2608269"></script>
-  <script src="/static/nav.js?v=2608269"></script>
-  <script src="/static/app.js?v=2608269"></script>
-  <script src="/static/duplicates.js?v=2608269"></script>
-  <script src="/static/nosub.js?v=2608269"></script>
-  <script src="/static/cleanup.js?v=2608269"></script>
+  <div id="nosubReplaceReportModal" class="modal hidden">
+    <div class="modal-card nosub-report-modal-card">
+      <div class="modal-header">
+        <h2 id="nosubReplaceReportTitle">一键替换记录</h2>
+        <button id="closeNosubReplaceReportBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <p id="nosubReplaceReportSummary" class="nosub-report-summary"></p>
+      <div id="nosubReplaceReportBody" class="nosub-report-body"></div>
+    </div>
+  </div>
+
+  <script src="/static/auth.js?v=26082610"></script>
+  <script src="/static/nav.js?v=26082610"></script>
+  <script src="/static/app.js?v=26082610"></script>
+  <script src="/static/duplicates.js?v=26082610"></script>
+  <script src="/static/nosub.js?v=26082610"></script>
+  <script src="/static/cleanup.js?v=26082610"></script>
 </body>
 </html>

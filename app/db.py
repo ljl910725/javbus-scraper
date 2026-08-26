@@ -73,6 +73,43 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_ignored_missing_subs_user_status
                 ON ignored_missing_subs(user_id, status, created_at DESC);
+
+            CREATE TABLE IF NOT EXISTS nosub_replace_jobs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                folders_json TEXT NOT NULL DEFAULT '[]',
+                status TEXT NOT NULL DEFAULT 'running',
+                scanned INTEGER NOT NULL DEFAULT 0,
+                videos INTEGER NOT NULL DEFAULT 0,
+                total INTEGER NOT NULL DEFAULT 0,
+                replaced_count INTEGER NOT NULL DEFAULT 0,
+                not_found_count INTEGER NOT NULL DEFAULT 0,
+                push_failed_count INTEGER NOT NULL DEFAULT 0,
+                error_count INTEGER NOT NULL DEFAULT 0,
+                message TEXT NOT NULL DEFAULT '',
+                started_at TEXT NOT NULL DEFAULT (datetime('now')),
+                finished_at TEXT NOT NULL DEFAULT '',
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_nosub_replace_jobs_user
+                ON nosub_replace_jobs(user_id, id DESC);
+
+            CREATE TABLE IF NOT EXISTS nosub_replace_items (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                job_id INTEGER NOT NULL,
+                status TEXT NOT NULL,
+                code TEXT NOT NULL DEFAULT '',
+                name TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL DEFAULT '',
+                message TEXT NOT NULL DEFAULT '',
+                magnet_title TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (job_id) REFERENCES nosub_replace_jobs(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_nosub_replace_items_job
+                ON nosub_replace_items(job_id, id);
             """
         )
         conn.commit()
@@ -415,3 +452,190 @@ def list_user_ids_with_pending_ignored() -> list[int]:
             """
         ).fetchall()
         return [int(row["user_id"]) for row in rows]
+
+
+def get_ignored_missing_sub_by_path(user_id: int, path: str) -> dict | None:
+    with get_connection() as conn:
+        row = conn.execute(
+            "SELECT * FROM ignored_missing_subs WHERE user_id = ? AND path = ?",
+            (user_id, path),
+        ).fetchone()
+        return _ignored_missing_row(row) if row else None
+
+
+def _replace_job_row(row: sqlite3.Row, items: list[dict] | None = None) -> dict:
+    folders: list[str] = []
+    try:
+        raw = json.loads(row["folders_json"] or "[]")
+        if isinstance(raw, list):
+            folders = [str(item) for item in raw if item]
+    except (TypeError, json.JSONDecodeError):
+        folders = []
+    return {
+        "id": row["id"],
+        "user_id": row["user_id"],
+        "folders": folders,
+        "status": row["status"] or "running",
+        "scanned": int(row["scanned"] or 0),
+        "videos": int(row["videos"] or 0),
+        "total": int(row["total"] or 0),
+        "replaced_count": int(row["replaced_count"] or 0),
+        "not_found_count": int(row["not_found_count"] or 0),
+        "push_failed_count": int(row["push_failed_count"] or 0),
+        "error_count": int(row["error_count"] or 0),
+        "message": row["message"] or "",
+        "started_at": row["started_at"] or "",
+        "finished_at": row["finished_at"] or "",
+        "items": items or [],
+    }
+
+
+def _replace_item_row(row: sqlite3.Row) -> dict:
+    return {
+        "id": row["id"],
+        "job_id": row["job_id"],
+        "status": row["status"],
+        "code": row["code"] or "",
+        "name": row["name"] or "",
+        "path": row["path"] or "",
+        "message": row["message"] or "",
+        "magnet_title": row["magnet_title"] or "",
+        "created_at": row["created_at"] or "",
+    }
+
+
+def create_nosub_replace_job(user_id: int, folders: list[str]) -> dict:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO nosub_replace_jobs (user_id, folders_json, status)
+            VALUES (?, ?, 'running')
+            """,
+            (user_id, json.dumps(folders, ensure_ascii=False)),
+        )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM nosub_replace_jobs WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+        return _replace_job_row(row)
+
+
+def add_nosub_replace_item(
+    job_id: int,
+    *,
+    status: str,
+    code: str = "",
+    name: str = "",
+    path: str = "",
+    message: str = "",
+    magnet_title: str = "",
+) -> dict:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            """
+            INSERT INTO nosub_replace_items (
+                job_id, status, code, name, path, message, magnet_title
+            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            """,
+            (job_id, status, code or "", name or "", path or "", message or "", magnet_title or ""),
+        )
+        count_col = {
+            "replaced": "replaced_count",
+            "not_found": "not_found_count",
+            "push_failed": "push_failed_count",
+            "error": "error_count",
+        }.get(status)
+        if count_col:
+            conn.execute(
+                f"UPDATE nosub_replace_jobs SET {count_col} = {count_col} + 1 WHERE id = ?",
+                (job_id,),
+            )
+        conn.commit()
+        row = conn.execute(
+            "SELECT * FROM nosub_replace_items WHERE id = ?",
+            (cursor.lastrowid,),
+        ).fetchone()
+        return _replace_item_row(row)
+
+
+def update_nosub_replace_job(
+    job_id: int,
+    *,
+    status: str | None = None,
+    scanned: int | None = None,
+    videos: int | None = None,
+    total: int | None = None,
+    message: str | None = None,
+    mark_finished: bool = False,
+) -> dict | None:
+    assignments = []
+    values: list = []
+    if status is not None:
+        assignments.append("status = ?")
+        values.append(status)
+    if scanned is not None:
+        assignments.append("scanned = ?")
+        values.append(int(scanned))
+    if videos is not None:
+        assignments.append("videos = ?")
+        values.append(int(videos))
+    if total is not None:
+        assignments.append("total = ?")
+        values.append(int(total))
+    if message is not None:
+        assignments.append("message = ?")
+        values.append(message)
+    if mark_finished:
+        assignments.append("finished_at = datetime('now')")
+        if status is None:
+            assignments.append("status = 'done'")
+    if not assignments:
+        return get_nosub_replace_job(job_id)
+    values.append(job_id)
+    with get_connection() as conn:
+        conn.execute(
+            f"UPDATE nosub_replace_jobs SET {', '.join(assignments)} WHERE id = ?",
+            values,
+        )
+        conn.commit()
+    return get_nosub_replace_job(job_id)
+
+
+def get_nosub_replace_job(job_id: int, user_id: int | None = None) -> dict | None:
+    with get_connection() as conn:
+        if user_id is None:
+            row = conn.execute(
+                "SELECT * FROM nosub_replace_jobs WHERE id = ?",
+                (job_id,),
+            ).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT * FROM nosub_replace_jobs WHERE id = ? AND user_id = ?",
+                (job_id, user_id),
+            ).fetchone()
+        if not row:
+            return None
+        items = conn.execute(
+            """
+            SELECT * FROM nosub_replace_items
+            WHERE job_id = ?
+            ORDER BY id
+            """,
+            (job_id,),
+        ).fetchall()
+        return _replace_job_row(row, [_replace_item_row(item) for item in items])
+
+
+def list_nosub_replace_jobs(user_id: int, limit: int = 30) -> list[dict]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            """
+            SELECT * FROM nosub_replace_jobs
+            WHERE user_id = ?
+            ORDER BY id DESC
+            LIMIT ?
+            """,
+            (user_id, max(1, min(int(limit or 30), 100))),
+        ).fetchall()
+        return [_replace_job_row(row) for row in rows]

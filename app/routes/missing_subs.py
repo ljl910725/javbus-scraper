@@ -20,7 +20,12 @@ from app.models import (
     IgnoredMissingSubItem,
     IgnoredMissingSubListResponse,
     MissingSubScanRequest,
+    NosubReplaceJob,
+    NosubReplaceJobListResponse,
+    NosubReplaceItem,
+    NosubReplaceRequest,
 )
+from app.replace_job import run_replace_job_events
 from app.subtitles.storage import resolve_file
 
 router = APIRouter(prefix="/api/missing-subs")
@@ -188,3 +193,71 @@ async def check_ignored_missing_subs(
         message=message,
         results=[IgnoredMissingSubCheckItemResult(**item) for item in results],
     )
+
+
+def _replace_job(row: dict) -> NosubReplaceJob:
+    return NosubReplaceJob(
+        id=row["id"],
+        status=row.get("status") or "running",
+        folders=row.get("folders") or [],
+        scanned=row.get("scanned") or 0,
+        videos=row.get("videos") or 0,
+        total=row.get("total") or 0,
+        replaced_count=row.get("replaced_count") or 0,
+        not_found_count=row.get("not_found_count") or 0,
+        push_failed_count=row.get("push_failed_count") or 0,
+        error_count=row.get("error_count") or 0,
+        message=row.get("message") or "",
+        started_at=row.get("started_at") or "",
+        finished_at=row.get("finished_at") or "",
+        items=[NosubReplaceItem(**item) for item in row.get("items") or []],
+    )
+
+
+@router.post("/replace/stream")
+async def replace_missing_subs_stream(body: NosubReplaceRequest, request: Request, user: CurrentUser):
+    if not body.folders:
+        raise HTTPException(status_code=400, detail="请至少选择一个文件夹")
+
+    stop = threading.Event()
+
+    async def disconnected() -> bool:
+        return await request.is_disconnected()
+
+    async def event_gen():
+        try:
+            async for event in run_replace_job_events(
+                user=user,
+                folders=body.folders,
+                stop=stop,
+                request_disconnected=disconnected,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+                if event.get("type") in {"done", "error", "cancelled"}:
+                    break
+        finally:
+            stop.set()
+
+    return StreamingResponse(
+        event_gen(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@router.get("/replace/jobs", response_model=NosubReplaceJobListResponse)
+async def list_replace_jobs(user: CurrentUser) -> NosubReplaceJobListResponse:
+    items = db.list_nosub_replace_jobs(user["id"])
+    return NosubReplaceJobListResponse(items=[_replace_job(item) for item in items])
+
+
+@router.get("/replace/jobs/{job_id}", response_model=NosubReplaceJob)
+async def get_replace_job(job_id: int, user: CurrentUser) -> NosubReplaceJob:
+    item = db.get_nosub_replace_job(job_id, user["id"])
+    if not item:
+        raise HTTPException(status_code=404, detail="执行记录不存在")
+    return _replace_job(item)

@@ -35,3 +35,89 @@ async function authFetch(url, options = {}) {
 function isLoggedIn() {
   return Boolean(getToken());
 }
+
+function ensureToastRoot() {
+  let root = document.getElementById("toastStack");
+  if (!root) {
+    root = document.createElement("div");
+    root.id = "toastStack";
+    root.className = "toast-stack";
+    document.body.appendChild(root);
+  }
+  return root;
+}
+
+function showToast(message, { type = "error", timeout = 5200 } = {}) {
+  const text = String(message || "").trim();
+  if (!text) return;
+  const root = ensureToastRoot();
+  const toast = document.createElement("div");
+  toast.className = `app-toast app-toast-${type}`;
+  toast.innerHTML = `<div class="app-toast-text"></div><button class="app-toast-close" type="button" aria-label="关闭">×</button>`;
+  toast.querySelector(".app-toast-text").textContent = text;
+  const close = () => {
+    toast.classList.add("is-leaving");
+    setTimeout(() => toast.remove(), 220);
+  };
+  toast.querySelector(".app-toast-close").addEventListener("click", close);
+  root.appendChild(toast);
+  if (timeout > 0) setTimeout(close, timeout);
+}
+
+function ensureConfirmModal() {
+  let modal = document.getElementById("appConfirmModal");
+  if (modal) return modal;
+  modal = document.createElement("div");
+  modal.id = "appConfirmModal";
+  modal.className = "modal hidden";
+  modal.innerHTML = `
+    <div class="modal-card app-confirm-card">
+      <div class="modal-header">
+        <h2 id="appConfirmTitle">请确认</h2>
+      </div>
+      <p id="appConfirmMessage" class="app-confirm-message"></p>
+      <div class="app-confirm-actions">
+        <button id="appConfirmCancelBtn" class="ghost-btn" type="button">取消</button>
+        <button id="appConfirmOkBtn" type="button">确定</button>
+      </div>
+    </div>`;
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function showAppConfirm({
+  title = "请确认",
+  message = "",
+  confirmText = "确定",
+  cancelText = "取消",
+  danger = false,
+} = {}) {
+  const modal = ensureConfirmModal();
+  const titleEl = document.getElementById("appConfirmTitle");
+  const messageEl = document.getElementById("appConfirmMessage");
+  const okBtn = document.getElementById("appConfirmOkBtn");
+  const cancelBtn = document.getElementById("appConfirmCancelBtn");
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  okBtn.textContent = confirmText;
+  cancelBtn.textContent = cancelText;
+  okBtn.classList.toggle("danger-btn", Boolean(danger));
+  modal.classList.remove("hidden");
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      modal.classList.add("hidden");
+      okBtn.removeEventListener("click", onOk);
+      cancelBtn.removeEventListener("click", onCancel);
+      modal.removeEventListener("click", onBackdrop);
+      resolve(value);
+    };
+    const onOk = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = (event) => {
+      if (event.target === modal) finish(false);
+    };
+    okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    modal.addEventListener("click", onBackdrop);
+  });
+}

@@ -472,3 +472,39 @@ class IgnoredMissingSubCheckResponse(BaseModel):
     success: bool = True
     message: str = ""
     results: list[IgnoredMissingSubCheckItemResult] = Field(default_factory=list)
+
+
+class NosubReplaceRequest(BaseModel):
+    folders: list[str] = Field(default_factory=list)
+
+
+class NosubReplaceItem(BaseModel):
+    id: int = 0
+    status: str
+    code: str = ""
+    name: str = ""
+    path: str = ""
+    message: str = ""
+    magnet_title: str = ""
+    created_at: str = ""
+
+
+class NosubReplaceJob(BaseModel):
+    id: int
+    status: str = "running"
+    folders: list[str] = Field(default_factory=list)
+    scanned: int = 0
+    videos: int = 0
+    total: int = 0
+    replaced_count: int = 0
+    not_found_count: int = 0
+    push_failed_count: int = 0
+    error_count: int = 0
+    message: str = ""
+    started_at: str = ""
+    finished_at: str = ""
+    items: list[NosubReplaceItem] = Field(default_factory=list)
+
+
+class NosubReplaceJobListResponse(BaseModel):
+    items: list[NosubReplaceJob] = Field(default_factory=list)

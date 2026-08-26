@@ -138,6 +138,9 @@ def _list_dir_names(dirpath: str, cache: dict[str, list[str]]) -> list[str]:
     return names
 
 
+_MAX_REPLACE_ITEMS = 2000
+
+
 def iter_scan_missing_subs(
     folders: list[str],
     *,
@@ -145,11 +148,15 @@ def iter_scan_missing_subs(
     limit: int = 10,
     offset: int = 0,
     ignored_paths: set[str] | None = None,
+    collect_all: bool = False,
 ):
     if not folders:
         raise ValueError("请至少选择一个文件夹")
 
-    page_size = max(1, min(int(limit or 10), 100))
+    if collect_all:
+        page_size = max(1, min(int(limit or _MAX_REPLACE_ITEMS), _MAX_REPLACE_ITEMS))
+    else:
+        page_size = max(1, min(int(limit or 10), 100))
     skip = max(0, int(offset or 0))
 
     selected: list[Path] = []
@@ -175,6 +182,12 @@ def iter_scan_missing_subs(
     current_dir = ""
     folder_index = 0
     page_full = False
+    walk_errors: list[str] = []
+
+    def on_walk_error(exc: OSError) -> None:
+        message = f"遍历文件失败: {exc}"
+        if message not in walk_errors:
+            walk_errors.append(message)
 
     def snapshot(*, phase: str, force: bool = False) -> dict | None:
         nonlocal last_emit
@@ -224,7 +237,7 @@ def iter_scan_missing_subs(
         if event:
             yield event
         for dirpath, dirnames, filenames in os.walk(
-            root, topdown=True, followlinks=False, onerror=lambda _exc: None
+            root, topdown=True, followlinks=False, onerror=on_walk_error
         ):
             if stop is not None and stop.is_set():
                 yield {"type": "cancelled"}
@@ -325,5 +338,6 @@ def iter_scan_missing_subs(
             "limit": page_size,
             "has_more": has_more or truncated,
             "truncated": truncated,
+            "walk_errors": walk_errors,
         },
     }

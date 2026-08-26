@@ -2141,3 +2141,152 @@ button:disabled {
   justify-content: space-between;
   gap: 0.5rem;
 }
+
+.toast-stack {
+  position: fixed;
+  top: 1rem;
+  right: 1rem;
+  z-index: 1400;
+  display: flex;
+  flex-direction: column;
+  gap: 0.55rem;
+  width: min(360px, calc(100vw - 2rem));
+  pointer-events: none;
+}
+
+.app-toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: 0.6rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 12px;
+  border: 1px solid var(--border);
+  background: #232838;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.35);
+  animation: toast-in 0.18s ease-out;
+}
+
+.app-toast-error {
+  border-color: rgba(255, 107, 107, 0.45);
+}
+
+.app-toast-success {
+  border-color: rgba(81, 207, 102, 0.4);
+}
+
+.app-toast-text {
+  flex: 1;
+  font-size: 0.88rem;
+  line-height: 1.45;
+}
+
+.app-toast-close {
+  background: transparent;
+  border: none;
+  color: var(--muted);
+  font-size: 1.1rem;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.app-toast.is-leaving {
+  opacity: 0;
+  transform: translateY(-6px);
+  transition: opacity 0.2s ease, transform 0.2s ease;
+}
+
+@keyframes toast-in {
+  from {
+    opacity: 0;
+    transform: translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.app-confirm-card {
+  width: min(460px, 100%);
+}
+
+.app-confirm-message {
+  white-space: pre-wrap;
+  color: var(--text);
+  margin: 0 0 1.1rem;
+  line-height: 1.55;
+}
+
+.app-confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.55rem;
+}
+
+.danger-btn,
+button.danger-btn {
+  background: #c44545;
+  color: #fff;
+}
+
+.danger-btn:hover,
+button.danger-btn:hover {
+  background: #d15555;
+}
+
+.nosub-report-modal-card {
+  width: min(720px, 96vw);
+  max-height: 88vh;
+  overflow: auto;
+}
+
+.nosub-report-summary {
+  margin: 0 0 0.9rem;
+  color: var(--muted);
+}
+
+.nosub-report-section {
+  margin-bottom: 1rem;
+  padding: 0.8rem 0.9rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg);
+}
+
+.nosub-report-section h3 {
+  margin: 0 0 0.55rem;
+  font-size: 0.95rem;
+}
+
+.nosub-report-list {
+  margin: 0;
+  padding-left: 1.1rem;
+  display: grid;
+  gap: 0.35rem;
+}
+
+.nosub-report-list li {
+  font-size: 0.85rem;
+  line-height: 1.4;
+}
+
+.nosub-report-empty {
+  color: var(--muted);
+  font-size: 0.85rem;
+  margin: 0;
+}
+
+.nosub-log-card {
+  cursor: pointer;
+}
+
+.nosub-log-counts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-top: 0.4rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+}
