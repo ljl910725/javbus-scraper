@@ -910,6 +910,7 @@ function renderSubtitleSection(movie) {
 function openSubtitleModal(code) {
   subtitleModalTitle.textContent = `${code} 外挂字幕`;
   subtitleModalList.innerHTML = '<p class="subtitle-status">正在搜索字幕...</p>';
+  bringModalToFront(subtitleModal);
   subtitleModal.classList.remove("hidden");
   loadSubtitlesForCode(code, subtitleModalList);
 }
@@ -1255,6 +1256,7 @@ function openSubtitleSaveModal(button) {
   subtitleSaveSearchInput.value = "";
   subtitleSaveHighlightFile = "";
   hideSubtitleSaveSearchResults();
+  bringModalToFront(subtitleSaveModal);
   subtitleSaveModal.classList.remove("hidden");
   subtitleSaveConfirmBtn.textContent = "保存到目录";
   loadSubtitleSaveFolders(subtitleSaveDir || subtitleSaveBrowsePath || "");
@@ -1417,6 +1419,7 @@ function openAuthModal(mode) {
   authModalTitle.textContent = mode === "register" ? "注册" : "登录";
   authSubmitBtn.textContent = mode === "register" ? "注册" : "登录";
   emailField.classList.toggle("hidden", mode !== "register");
+  bringModalToFront(authModal);
   authModal.classList.remove("hidden");
 }
 
@@ -1522,7 +1525,8 @@ async function pushToOffline({
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    if (!res.ok) throw new Error(apiErrorMessage(data, `HTTP ${res.status}`));
+    if (data.success === false) throw new Error(pushFailureMessage(data));
     const folder = pushFolders.find((item) => item.id === pushFolderId);
     const folderHint = folder ? ` → ${folder.name}` : "";
     setStatus(`${data.backend === "cd2" ? "CD2" : "115"}${folderHint} ${data.message || "推送完成"}`);
@@ -1532,7 +1536,12 @@ async function pushToOffline({
     }
     return true;
   } catch (err) {
-    setStatus(`推送失败: ${err.message}`);
+    const message = err.message || "推送失败";
+    setStatus(`推送失败: ${message}`);
+    showToast(`推送失败：${message}`, { type: "error", timeout: 7200 });
+    if (typeof setNosubLookupStatus === "function" && nosubLookupModal && !nosubLookupModal.classList.contains("hidden")) {
+      setNosubLookupStatus(`推送失败：${message}`, true);
+    }
     if (button) button.textContent = originalText || pushLabel;
     return false;
   } finally {
@@ -1551,6 +1560,7 @@ function openPushFolderModal(request) {
       </button>`
     )
     .join("");
+  bringModalToFront(pushFolderModal);
   pushFolderModal.classList.remove("hidden");
 }
 
@@ -1622,6 +1632,7 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null } = {
     return;
   }
   pendingP115Magnet = { magnet, code, button, parsed: null };
+  bringModalToFront(p115MagnetModal);
   p115MagnetModal.classList.remove("hidden");
   const folderText = p115FolderPath ? `保存到 ${p115FolderPath}` : "未配置保存目录，将放到 115 默认离线目录";
   p115MagnetHint.textContent = folderText;
@@ -1678,15 +1689,18 @@ async function confirmP115MagnetPush() {
       }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "推送失败");
+    if (!res.ok) throw new Error(apiErrorMessage(data, "推送失败"));
+    if (data.success === false) throw new Error(pushFailureMessage(data, data.message || "推送失败"));
     const folderHint = p115FolderPath ? ` → ${p115FolderPath}` : "";
     setStatus(`115${folderHint} ${data.message || "推送完成"}`);
     setP115MagnetStatus(data.message || "推送完成");
     if (button) button.textContent = "已推送";
     closeP115MagnetModal();
   } catch (err) {
-    setP115MagnetStatus(err.message || "推送失败", true);
-    setStatus(`115 推送失败: ${err.message}`);
+    const message = err.message || "推送失败";
+    setP115MagnetStatus(message, true);
+    setStatus(`115 推送失败: ${message}`);
+    showToast(`115 推送失败：${message}`, { type: "error", timeout: 7200 });
     if (button) button.textContent = original || "推送115";
   } finally {
     p115MagnetConfirmBtn.disabled = false;
@@ -1960,6 +1974,7 @@ function openLightbox(gallery, startIndex = 0) {
   lightboxGallery = gallery;
   lightboxIndex = Math.max(0, Math.min(startIndex, gallery.length - 1));
   updateLightbox();
+  bringModalToFront(lightbox);
   lightbox.classList.remove("hidden");
   lightbox.setAttribute("aria-hidden", "false");
 }

@@ -110,6 +110,19 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_nosub_replace_items_job
                 ON nosub_replace_items(job_id, id);
+
+            CREATE TABLE IF NOT EXISTS known_subtitle_files (
+                user_id INTEGER NOT NULL,
+                path TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                code TEXT NOT NULL DEFAULT '',
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                PRIMARY KEY (user_id, path),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_known_subtitle_files_user
+                ON known_subtitle_files(user_id);
             """
         )
         conn.commit()
@@ -365,6 +378,45 @@ def list_ignored_missing_paths(user_id: int) -> set[str]:
             (user_id,),
         ).fetchall()
         return {row["path"] for row in rows if row["path"]}
+
+
+def list_known_subtitle_paths(user_id: int) -> set[str]:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT path FROM known_subtitle_files WHERE user_id = ?",
+            (user_id,),
+        ).fetchall()
+        return {row["path"] for row in rows if row["path"]}
+
+
+def add_known_subtitle_files(user_id: int, items: list[dict] | None) -> int:
+    rows: list[tuple] = []
+    seen: set[str] = set()
+    for item in items or []:
+        path = (item.get("path") or "").strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        rows.append((user_id, path, item.get("name") or "", item.get("code") or ""))
+    if not rows:
+        return 0
+    with get_connection() as conn:
+        conn.executemany(
+            """
+            INSERT INTO known_subtitle_files (user_id, path, name, code)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT(user_id, path) DO UPDATE SET
+                name = excluded.name,
+                code = excluded.code
+            """,
+            rows,
+        )
+        conn.commit()
+    return len(rows)
+
+
+def scan_skip_paths(user_id: int) -> set[str]:
+    return list_ignored_missing_paths(user_id) | list_known_subtitle_paths(user_id)
 
 
 def list_pending_ignored_missing_subs(user_id: int | None = None) -> list[dict]:
@@ -635,6 +687,97 @@ def mark_nosub_replace_items_replaced(
                     UPDATE nosub_replace_jobs
                     SET {old_col} = MAX(0, {old_col} - 1),
                         replaced_count = replaced_count + 1
+                    WHERE id = ?
+                    """,
+                    (row["job_id"],),
+                )
+            job_ids.add(int(row["job_id"]))
+            updated = conn.execute(
+                "SELECT * FROM nosub_replace_items WHERE id = ?",
+                (row["id"],),
+            ).fetchone()
+            if updated:
+                updated_items.append(_replace_item_row(updated))
+        conn.commit()
+
+    jobs = [get_nosub_replace_job(job_id, user_id) for job_id in sorted(job_ids)]
+    return {
+        "items": updated_items,
+        "jobs": [job for job in jobs if job],
+    }
+
+
+_FAILED_REPLACE_STATUSES = {"not_found", "push_failed", "error"}
+
+
+def dismiss_nosub_replace_items(
+    user_id: int,
+    *,
+    path: str = "",
+    item_id: int | None = None,
+    status: str = "ignored",
+    message: str = "",
+) -> dict:
+    path = (path or "").strip()
+    new_status = status if status in {"ignored", "deleted"} else "ignored"
+    default_message = "已忽略" if new_status == "ignored" else "已删除原文件"
+    updated_items: list[dict] = []
+    job_ids: set[int] = set()
+    with get_connection() as conn:
+        if not path and item_id is not None:
+            row = conn.execute(
+                """
+                SELECT i.path
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE i.id = ? AND j.user_id = ?
+                """,
+                (int(item_id), user_id),
+            ).fetchone()
+            if row:
+                path = (row["path"] or "").strip()
+
+        if path:
+            rows = conn.execute(
+                """
+                SELECT i.*
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE j.user_id = ? AND i.path = ?
+                """,
+                (user_id, path),
+            ).fetchall()
+        elif item_id is not None:
+            rows = conn.execute(
+                """
+                SELECT i.*
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE i.id = ? AND j.user_id = ?
+                """,
+                (int(item_id), user_id),
+            ).fetchall()
+        else:
+            rows = []
+
+        for row in rows:
+            old_status = row["status"] or ""
+            if old_status not in _FAILED_REPLACE_STATUSES:
+                continue
+            conn.execute(
+                """
+                UPDATE nosub_replace_items
+                SET status = ?, message = ?
+                WHERE id = ?
+                """,
+                (new_status, message or default_message, row["id"]),
+            )
+            old_col = _REPLACE_COUNT_COLS.get(old_status)
+            if old_col:
+                conn.execute(
+                    f"""
+                    UPDATE nosub_replace_jobs
+                    SET {old_col} = MAX(0, {old_col} - 1)
                     WHERE id = ?
                     """,
                     (row["job_id"],),

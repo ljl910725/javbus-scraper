@@ -1334,7 +1334,7 @@ button:disabled {
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1200;
+  z-index: 1550;
   padding: 1rem;
 }
 
@@ -1669,8 +1669,9 @@ button:disabled {
 
 #pushFolderModal,
 #subtitleModal,
-#subtitleSaveModal {
-  z-index: 1100;
+#subtitleSaveModal,
+#p115MagnetModal {
+  z-index: 1500;
 }
 
 .push-folder-modal-card {
@@ -2151,7 +2152,7 @@ button:disabled {
   position: fixed;
   top: 1rem;
   right: 1rem;
-  z-index: 1400;
+  z-index: 2000;
   display: flex;
   flex-direction: column;
   gap: 0.55rem;
@@ -2390,8 +2391,19 @@ button.danger-btn:hover {
 
 .nosub-replace-live-item-actions {
   margin-top: 0.35rem;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
 }
 
 #nosubLookupModal {
-  z-index: 1105;
+  z-index: 1400;
+}
+
+#nosubReplaceReportModal {
+  z-index: 1000;
+}
+
+#appConfirmModal {
+  z-index: 1600;
 }

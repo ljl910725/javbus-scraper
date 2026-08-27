@@ -181,6 +181,7 @@ def iter_scan_missing_subs(
     folder_index = 0
     page_full = False
     walk_errors: list[str] = []
+    known_subtitles: list[dict] = []
 
     def on_walk_error(exc: OSError) -> None:
         message = f"遍历文件失败: {exc}"
@@ -257,11 +258,18 @@ def iter_scan_missing_subs(
                     break
                 if Path(name).suffix.lower() not in VIDEO_EXTENSIONS:
                     continue
-                videos += 1
-                if has_c_subtitle(name):
-                    continue
                 path = Path(dirpath) / name
                 if str(path) in skip_paths:
+                    continue
+                videos += 1
+                if has_c_subtitle(name):
+                    known_subtitles.append(
+                        {
+                            "path": str(path),
+                            "name": name,
+                            "code": extract_jav_code(name) or "",
+                        }
+                    )
                     continue
                 matched += 1
                 if matched <= skip:
@@ -347,5 +355,6 @@ def iter_scan_missing_subs(
             "has_more": has_more or truncated,
             "truncated": truncated,
             "walk_errors": walk_errors,
+            "known_subtitles": known_subtitles,
         },
     }

@@ -522,3 +522,10 @@ class NosubReplaceMarkReplacedResponse(BaseModel):
     message: str = ""
     items: list[NosubReplaceItem] = Field(default_factory=list)
     jobs: list[NosubReplaceJob] = Field(default_factory=list)
+
+
+class NosubReplaceDismissRequest(BaseModel):
+    path: str = ""
+    item_id: int | None = None
+    status: str = "ignored"
+    message: str = ""

@@ -25,6 +25,7 @@ from app.models import (
     NosubReplaceItem,
     NosubReplaceMarkReplacedRequest,
     NosubReplaceMarkReplacedResponse,
+    NosubReplaceDismissRequest,
     NosubReplaceRequest,
 )
 from app.replace_job import FolderLockBusy, release_folder_locks, run_replace_job_events, try_acquire_folder_locks
@@ -41,7 +42,7 @@ async def scan_missing_subs_stream(body: MissingSubScanRequest, request: Request
     loop = asyncio.get_running_loop()
     queue: asyncio.Queue[dict | None] = asyncio.Queue()
     stop = threading.Event()
-    ignored_paths = db.list_ignored_missing_paths(user["id"])
+    ignored_paths = db.scan_skip_paths(user["id"])
 
     def worker() -> None:
         try:
@@ -74,6 +75,9 @@ async def scan_missing_subs_stream(body: MissingSubScanRequest, request: Request
                     continue
                 if event is None:
                     break
+                if event.get("type") == "done":
+                    result = event.get("result") or {}
+                    db.add_known_subtitle_files(user["id"], result.pop("known_subtitles", None) or [])
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
                 if event.get("type") in {"done", "error", "cancelled"}:
                     break
@@ -301,6 +305,34 @@ async def mark_replace_item_replaced(
     return NosubReplaceMarkReplacedResponse(
         success=True,
         message=message,
+        items=items,
+        jobs=jobs,
+    )
+
+
+@router.post("/replace/dismiss", response_model=NosubReplaceMarkReplacedResponse)
+async def dismiss_replace_item(
+    body: NosubReplaceDismissRequest,
+    user: CurrentUser,
+) -> NosubReplaceMarkReplacedResponse:
+    path = (body.path or "").strip()
+    if not path and body.item_id is None:
+        raise HTTPException(status_code=400, detail="缺少文件路径")
+    status = (body.status or "ignored").strip()
+    if status not in {"ignored", "deleted"}:
+        status = "ignored"
+    result = db.dismiss_nosub_replace_items(
+        user["id"],
+        path=path,
+        item_id=body.item_id,
+        status=status,
+        message=body.message or "",
+    )
+    jobs = [_replace_job(job) for job in result.get("jobs") or []]
+    items = [NosubReplaceItem(**item) for item in result.get("items") or []]
+    return NosubReplaceMarkReplacedResponse(
+        success=True,
+        message=f"已移出 {len(items)} 条失败记录" if items else "没有需要移出的失败记录",
         items=items,
         jobs=jobs,
     )

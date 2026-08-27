@@ -275,7 +275,7 @@ async def run_replace_job_events(
     out_q: asyncio.Queue[dict] = asyncio.Queue()
 
     def scan_thread() -> None:
-        ignored_paths = db.list_ignored_missing_paths(user["id"])
+        ignored_paths = db.scan_skip_paths(user["id"])
         try:
             for event in iter_scan_missing_subs(
                 folders,
@@ -283,6 +283,9 @@ async def run_replace_job_events(
                 collect_all=True,
                 ignored_paths=ignored_paths,
             ):
+                if event.get("type") == "done":
+                    meta = event.get("result") or {}
+                    db.add_known_subtitle_files(user["id"], meta.pop("known_subtitles", None) or [])
                 if stop.is_set():
                     loop.call_soon_threadsafe(scan_q.put_nowait, {"type": "cancelled"})
                     break

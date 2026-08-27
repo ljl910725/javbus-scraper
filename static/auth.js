@@ -47,6 +47,39 @@ function ensureToastRoot() {
   return root;
 }
 
+function apiErrorMessage(data, fallback = "请求失败") {
+  const detail = data?.detail;
+  if (typeof detail === "string" && detail.trim()) return detail;
+  if (Array.isArray(detail)) {
+    const parts = detail
+      .map((item) => (typeof item === "string" ? item : item?.msg || item?.message || ""))
+      .filter(Boolean);
+    if (parts.length) return parts.join("；");
+  }
+  if (detail && typeof detail === "object") {
+    if (typeof detail.msg === "string" && detail.msg.trim()) return detail.msg;
+    if (typeof detail.message === "string" && detail.message.trim()) return detail.message;
+  }
+  if (typeof data?.message === "string" && data.message.trim()) return data.message;
+  return fallback;
+}
+
+function pushFailureMessage(data, fallback = "推送失败") {
+  const failed = (data?.results || [])
+    .filter((row) => row && row.success === false)
+    .map((row) => row.message)
+    .filter(Boolean);
+  if (failed.length) return failed.join("；");
+  return apiErrorMessage(data, fallback);
+}
+
+let modalZIndex = 1200;
+function bringModalToFront(el) {
+  if (!el) return;
+  modalZIndex += 10;
+  el.style.zIndex = String(modalZIndex);
+}
+
 function showToast(message, { type = "error", timeout = 5200 } = {}) {
   const text = String(message || "").trim();
   if (!text) return;
@@ -102,6 +135,7 @@ function showAppConfirm({
   okBtn.textContent = confirmText;
   cancelBtn.textContent = cancelText;
   okBtn.classList.toggle("danger-btn", Boolean(danger));
+  bringModalToFront(modal);
   modal.classList.remove("hidden");
   return new Promise((resolve) => {
     const finish = (value) => {
