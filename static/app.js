@@ -1747,6 +1747,48 @@ function setP115PasteStatus(message, isError = false, loading = false) {
   p115PasteStatus.classList.toggle("loading", Boolean(loading));
 }
 
+function p115TabUsesCd2() {
+  return pushBackend === "cd2" && Boolean(pushReady);
+}
+
+function p115TabReady() {
+  return p115TabUsesCd2() || Boolean(p115Ready);
+}
+
+function p115TabUnreadyMessage() {
+  if (pushBackend === "cd2") {
+    return "CD2 未就绪，请先在配置页填写 API 令牌，并添加可用的推送目录";
+  }
+  if (pushBackend === "p115") {
+    return "115 未就绪，请先在配置页填写 Cookie，并选择离线保存目录";
+  }
+  return "推送未就绪，请先在配置页填写 CD2 API 令牌或 115 Cookie";
+}
+
+function currentOfflineLabel() {
+  return p115TabUsesCd2() ? "CD2" : "115";
+}
+
+function currentOfflineFolderHint() {
+  if (p115TabUsesCd2()) {
+    if (pushFolders.length === 1) return pushFolders[0].path || pushFolders[0].name || "";
+    if (pushFolders.length > 1) return `${pushFolders.length} 个目录，推送时选择`;
+    return "";
+  }
+  return p115FolderPath || "";
+}
+
+async function ensureP115TabReady() {
+  if (!isLoggedIn()) {
+    setP115PasteStatus("推送需要先登录", true);
+    openAuthModal("login");
+    return false;
+  }
+  if (p115TabReady()) return true;
+  setP115PasteStatus(p115TabUnreadyMessage(), true);
+  return false;
+}
+
 function extractMagnetLinks(text) {
   const matches = String(text || "").match(MAGNET_LINK_RE) || [];
   const seen = new Set();
@@ -1786,23 +1828,64 @@ function currentP115MagnetLinks() {
 }
 
 async function parsePastedP115Magnet(link) {
-  if (!isLoggedIn()) {
-    setP115PasteStatus("推送到 115 需要先登录", true);
-    openAuthModal("login");
-    return;
-  }
-  if (!p115Ready) {
-    setP115PasteStatus("115 未就绪，请先在配置页填写 Cookie，并选择离线保存目录", true);
-    return;
-  }
+  if (!(await ensureP115TabReady())) return;
   const magnet = (link || "").trim();
   if (!magnet) {
     setP115PasteStatus("请先粘贴磁力链接", true);
     return;
   }
+  if (p115TabUsesCd2()) {
+    await pushPastedMagnetsWithCurrentBackend([magnet], p115ParseBtn);
+    return;
+  }
   setP115PasteStatus("正在打开解析窗口...", false, true);
   await openP115MagnetModal({ magnet });
   setP115PasteStatus(p115FolderPath ? `将推送到 ${p115FolderPath}` : "解析窗口已打开，确认后会推送到 115");
+}
+
+async function pushPastedMagnetsWithCurrentBackend(links, button) {
+  const label = currentOfflineLabel();
+  const folder = currentOfflineFolderHint();
+  const ok = await showAppConfirm({
+    title: `推送到 ${label}`,
+    message: `确定把 ${links.length} 条磁力整条推送到 ${label}${folder ? `\n${folder}` : ""}？\n${p115TabUsesCd2() ? "CD2 会下整条任务，不能勾选单文件。" : "不会弹出选文件，整条任务都会下。"}`,
+    confirmText: "推送",
+  });
+  if (!ok) return false;
+  if (p115TabUsesCd2()) {
+    setP115PasteStatus(`正在推送到 ${label}...`, false, true);
+    const success = await pushToOffline({ magnets: links, button });
+    if (success) {
+      setP115PasteStatus(`已推送 ${links.length} 条到 ${label}${folder && !folder.includes("选择") ? ` → ${folder}` : ""}`);
+    } else {
+      setP115PasteStatus("推送未完成，请检查 CD2 令牌、推送目录，或在弹窗里选择目录", true);
+    }
+    return success;
+  }
+  if (button) button.disabled = true;
+  let success = 0;
+  try {
+    for (let index = 0; index < links.length; index += 1) {
+      setP115PasteStatus(`正在整条推送 ${index + 1}/${links.length}...`, false, true);
+      const res = await authFetch("/api/p115/magnet/push", {
+        method: "POST",
+        body: JSON.stringify({ magnet: links[index], info_hash: "", wanted: [] }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(apiErrorMessage(data, `第 ${index + 1} 条推送失败`));
+      if (data.success === false) throw new Error(pushFailureMessage(data, `第 ${index + 1} 条推送失败`));
+      if (data.success) success += 1;
+    }
+    setP115PasteStatus(`已整条推送 ${success}/${links.length} 条到 115${p115FolderPath ? ` → ${p115FolderPath}` : ""}`);
+    return true;
+  } catch (err) {
+    const message = err.message || "整条推送失败";
+    setP115PasteStatus(message, true);
+    showToast(`推送失败：${message}`, { type: "error", timeout: 7200 });
+    return false;
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 p115ParseBtn?.addEventListener("click", async () => {
@@ -1813,7 +1896,7 @@ p115ParseBtn?.addEventListener("click", async () => {
     return;
   }
   if (links.length > 1) {
-    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先解析第 1 条。也可点下面的「解析这条」。`);
+    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先处理第 1 条。也可点下面单独处理，或用「全部整条推送」。`);
   }
   await parsePastedP115Magnet(links[0]);
 });
@@ -1825,41 +1908,8 @@ p115PushAllBtn?.addEventListener("click", async () => {
     setP115PasteStatus("没有识别到 magnet 链接", true);
     return;
   }
-  if (!isLoggedIn()) {
-    openAuthModal("login");
-    return;
-  }
-  if (!p115Ready) {
-    setP115PasteStatus("115 未就绪，请先在配置页填写 Cookie 并选择保存目录", true);
-    return;
-  }
-  const ok = await showAppConfirm({
-    title: "推送到 115",
-    message: `确定把 ${links.length} 条磁力整条推送到 115${p115FolderPath ? `\n${p115FolderPath}` : ""}？\n不会弹出选文件，整条任务都会下。`,
-    confirmText: "推送",
-  });
-  if (!ok) return;
-  p115ParseBtn.disabled = true;
-  p115PushAllBtn.disabled = true;
-  let success = 0;
-  try {
-    for (let index = 0; index < links.length; index += 1) {
-      setP115PasteStatus(`正在整条推送 ${index + 1}/${links.length}...`, false, true);
-      const res = await authFetch("/api/p115/magnet/push", {
-        method: "POST",
-        body: JSON.stringify({ magnet: links[index], info_hash: "", wanted: [] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `第 ${index + 1} 条推送失败`);
-      if (data.success) success += 1;
-    }
-    setP115PasteStatus(`已整条推送 ${success}/${links.length} 条到 115${p115FolderPath ? ` → ${p115FolderPath}` : ""}`);
-  } catch (err) {
-    setP115PasteStatus(err.message || "整条推送失败", true);
-  } finally {
-    p115ParseBtn.disabled = false;
-    p115PushAllBtn.disabled = false;
-  }
+  if (!(await ensureP115TabReady())) return;
+  await pushPastedMagnetsWithCurrentBackend(links, p115PushAllBtn);
 });
 
 p115PasteList?.addEventListener("click", async (event) => {
