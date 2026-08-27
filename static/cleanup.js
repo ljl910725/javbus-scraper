@@ -215,7 +215,7 @@ function cleanupRulesSummary(rules = readCleanupRulesFromForm()) {
 function updateCleanupHint() {
   if (!cleanupHintEl) return;
   cleanupHintEl.textContent =
-    `当前规则：删除 ${cleanupRulesSummary()}。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。规则会自动保存，下次打开可直接复用。`;
+    `当前规则：删除 ${cleanupRulesSummary()}。开始清理后会边扫边删，匹配到就立刻删除，不会等全部扫描完。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。规则会自动保存，下次打开可直接复用。`;
 }
 
 function persistCleanupRulesLocal(rules = readCleanupRulesFromForm()) {
@@ -435,7 +435,7 @@ function hideCleanupProgress() {
 }
 
 function cleanupPhaseLabel(phase) {
-  if (phase === "deleting") return "正在删除文件";
+  if (phase === "deleting") return "正在扫描并删除";
   if (phase === "pruning") return "正在清理空目录";
   if (phase === "summarizing") return "正在汇总";
   return "正在扫描";
@@ -497,6 +497,7 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
     current_dir: cleanupSelectedFolders[0]?.path || "",
     percent: 0,
   });
+  let lastProgress = null;
   try {
     const res = await authFetch(url, {
       method: "POST",
@@ -515,6 +516,7 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
     await readSseJson(res, (event) => {
       endedType = event.type;
       if (event.type === "progress") {
+        lastProgress = event;
         showCleanupProgress(event);
         setCleanupStatus(`${cleanupPhaseLabel(event.phase)}，请稍候...`, false, true);
         return;
@@ -523,14 +525,25 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
         finalResult = event.result;
         return;
       }
+      if (event.type === "cancelled") {
+        finalResult = event.result || null;
+        return;
+      }
       if (event.type === "error") {
         throw new Error(event.message || "操作失败");
       }
     });
 
     if (endedType === "cancelled") {
-      setCleanupStatus("已取消");
       hideCleanupProgress();
+      if (finalResult && (finalResult.deleted_files || finalResult.deleted_dirs)) {
+        setCleanupStatus(
+          `已取消，已删除 ${finalResult.deleted_files || 0} 个文件、${finalResult.deleted_dirs || 0} 个空子文件夹，释放 ${formatCleanupSize(finalResult.bytes || 0)}`
+        );
+        renderCleanupResults(finalResult, { ran: true });
+      } else {
+        setCleanupStatus("已取消");
+      }
       return;
     }
     if (!finalResult) {
@@ -555,7 +568,15 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
     }
   } catch (err) {
     if (err.name === "AbortError") {
-      setCleanupStatus("已取消");
+      const deleted = lastProgress?.deleted_files || 0;
+      const dirs = lastProgress?.deleted_dirs || 0;
+      if (deleted || dirs) {
+        setCleanupStatus(
+          `已取消，已删除 ${deleted} 个文件、${dirs} 个空子文件夹，释放 ${formatCleanupSize(lastProgress.bytes || 0)}`
+        );
+      } else {
+        setCleanupStatus("已取消");
+      }
     } else {
       setCleanupStatus(err.message || "操作失败", true);
     }
@@ -577,6 +598,7 @@ function runCleanup() {
   const rules = readCleanupRulesFromForm();
   const lines = [
     "确定开始清理？删除后不可恢复。",
+    "匹配到符合条件的文件会立刻删除，不会等全部扫描完。",
     `将删除：${cleanupRulesSummary(rules)}。`,
     "变空的子文件夹会被删掉，选中的根目录即使空了也不会删除。",
   ];

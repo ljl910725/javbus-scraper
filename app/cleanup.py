@@ -165,6 +165,7 @@ def _collect_junk(
     delete_txt: bool = True,
     delete_small_video: bool = True,
     small_video_mb: int = DEFAULT_SMALL_VIDEO_MB,
+    delete_now: bool = False,
     stop=None,
 ):
     extra_exts = set(normalize_extra_exts(extra_raw))
@@ -172,17 +173,25 @@ def _collect_junk(
     selected = _resolve_selected(folders)
     protected = {str(path) for path in selected}
     junk: list[dict] = []
+    failed: list[dict] = []
+    failed_count = 0
     visited_dirs: list[str] = []
     files_kept: dict[str, int] = defaultdict(int)
     children: dict[str, list[str]] = defaultdict(list)
     counts = _empty_counts()
     bytes_total = 0
+    deleted_files = 0
+    deleted_bytes = 0
     scanned = 0
     dirs = 0
     truncated = False
     last_emit = 0.0
     current_dir = ""
     folder_index = 0
+    walk_phase = "deleting" if delete_now else "scanning"
+
+    def matched_count() -> int:
+        return sum(counts.values())
 
     def snapshot(*, phase: str, force: bool = False) -> dict | None:
         nonlocal last_emit
@@ -192,27 +201,52 @@ def _collect_junk(
         last_emit = now
         percent = None
         if selected:
-            percent = min(99, int(((folder_index + (0 if phase == "scanning" else 1)) / len(selected)) * 100))
+            walking = phase in {"scanning", "deleting", "starting"}
+            percent = min(99, int(((folder_index + (0 if walking else 1)) / len(selected)) * 100))
         return {
             "type": "progress",
             "phase": phase,
             "scanned": scanned,
-            "matched": len(junk),
+            "matched": matched_count(),
+            "deleted_files": deleted_files,
+            "deleted_dirs": 0,
+            "failed": failed_count,
             "dirs": dirs,
             "folder_index": folder_index,
             "folder_total": len(selected),
             "current_dir": current_dir,
-            "bytes": bytes_total,
+            "bytes": deleted_bytes if delete_now else bytes_total,
             "counts": dict(counts),
             "percent": percent,
             "truncated": truncated,
         }
+
+    def cancelled_event() -> dict:
+        payload = {"type": "cancelled"}
+        if delete_now:
+            payload["result"] = {
+                "scanned": scanned,
+                "dirs": dirs,
+                "matched": matched_count(),
+                "deleted_files": deleted_files,
+                "deleted_dirs": 0,
+                "bytes": deleted_bytes,
+                "counts": dict(counts),
+                "failed": failed[:50],
+                "failed_count": failed_count,
+                "truncated": truncated,
+                "extra_exts": sorted(extra_exts),
+            }
+        return payload
 
     yield {
         "type": "progress",
         "phase": "starting",
         "scanned": 0,
         "matched": 0,
+        "deleted_files": 0,
+        "deleted_dirs": 0,
+        "failed": 0,
         "dirs": 0,
         "folder_index": 0,
         "folder_total": len(selected),
@@ -225,17 +259,17 @@ def _collect_junk(
 
     for folder_index, root in enumerate(selected):
         if stop is not None and stop.is_set():
-            yield {"type": "cancelled"}
+            yield cancelled_event()
             return
         current_dir = str(root)
-        event = snapshot(phase="scanning", force=True)
+        event = snapshot(phase=walk_phase, force=True)
         if event:
             yield event
         for dirpath, dirnames, filenames in os.walk(
             root, topdown=True, followlinks=False, onerror=lambda _exc: None
         ):
             if stop is not None and stop.is_set():
-                yield {"type": "cancelled"}
+                yield cancelled_event()
                 return
             current = Path(dirpath)
             kept_dirnames: list[str] = []
@@ -251,7 +285,7 @@ def _collect_junk(
             visited_dirs.append(dirpath)
             dirs += 1
             current_dir = dirpath
-            event = snapshot(phase="scanning")
+            event = snapshot(phase=walk_phase)
             if event:
                 yield event
             for name in filenames:
@@ -260,7 +294,7 @@ def _collect_junk(
                     files_kept[dirpath] += 1
                     continue
                 scanned += 1
-                if scanned > _MAX_SCAN_FILES:
+                if not delete_now and scanned > _MAX_SCAN_FILES:
                     truncated = True
                     break
                 try:
@@ -281,14 +315,32 @@ def _collect_junk(
                     continue
                 counts[reason] += 1
                 bytes_total += size
-                junk.append(_file_payload(entry, reason, size))
+                payload = _file_payload(entry, reason, size)
+                if not delete_now:
+                    junk.append(payload)
+                    continue
+                current_dir = str(entry)
+                try:
+                    _safe_unlink(entry)
+                    deleted_files += 1
+                    deleted_bytes += size
+                    if len(junk) < _SAMPLE_FILES:
+                        junk.append(payload)
+                except (ValueError, OSError) as exc:
+                    files_kept[dirpath] += 1
+                    failed_count += 1
+                    if len(failed) < 50:
+                        failed.append({"path": str(entry), "message": str(exc)})
+                event = snapshot(phase=walk_phase)
+                if event:
+                    yield event
             if truncated:
                 break
         if truncated:
             break
 
     if stop is not None and stop.is_set():
-        yield {"type": "cancelled"}
+        yield cancelled_event()
         return
 
     empty_dirs = _estimate_empty_dirs(visited_dirs, files_kept, children, protected)
@@ -299,6 +351,10 @@ def _collect_junk(
         "visited_dirs": visited_dirs,
         "junk": junk,
         "empty_dirs": empty_dirs,
+        "failed": failed,
+        "failed_count": failed_count,
+        "deleted_files": deleted_files,
+        "deleted_bytes": deleted_bytes,
         "counts": counts,
         "bytes": bytes_total,
         "scanned": scanned,
@@ -414,6 +470,7 @@ def iter_run_cleanup(
         delete_txt=delete_txt,
         delete_small_video=delete_small_video,
         small_video_mb=small_video_mb,
+        delete_now=True,
         stop=stop,
     ):
         if event.get("type") in {"progress", "cancelled"}:
@@ -426,14 +483,14 @@ def iter_run_cleanup(
     if collected is None:
         raise ValueError("扫描未完成")
 
-    junk = collected["junk"]
     protected = collected["protected"]
     visited_dirs = collected["visited_dirs"]
     roots = get_browse_roots()
-    deleted_files = 0
-    deleted_bytes = 0
+    deleted_files = collected["deleted_files"]
+    deleted_bytes = collected["deleted_bytes"]
     deleted_dirs = 0
-    failed: list[dict] = []
+    failed = list(collected.get("failed") or [])
+    failed_count = int(collected.get("failed_count") or len(failed))
     last_emit = 0.0
     current_path = ""
 
@@ -447,10 +504,10 @@ def iter_run_cleanup(
             "type": "progress",
             "phase": phase,
             "scanned": collected["scanned"],
-            "matched": len(junk),
+            "matched": sum(collected["counts"].values()),
             "deleted_files": deleted_files,
             "deleted_dirs": deleted_dirs,
-            "failed": len(failed),
+            "failed": failed_count,
             "dirs": collected["dirs"],
             "folder_index": max(len(collected["selected"]) - 1, 0),
             "folder_total": len(collected["selected"]),
@@ -461,27 +518,25 @@ def iter_run_cleanup(
             "truncated": collected["truncated"],
         }
 
-    total = max(len(junk), 1)
-    for index, item in enumerate(junk):
-        if stop is not None and stop.is_set():
-            yield {"type": "cancelled"}
-            return
-        current_path = item["path"]
-        event = delete_snapshot(phase="deleting", percent=min(99, int((index / total) * 90)))
-        if event:
-            yield event
-        try:
-            path = Path(item["path"])
-            _safe_unlink(path)
-            deleted_files += 1
-            deleted_bytes += int(item.get("size") or 0)
-        except (ValueError, OSError, TypeError) as exc:
-            failed.append({"path": item["path"], "message": str(exc)})
-
     dir_total = max(len(visited_dirs), 1)
     for index, directory in enumerate(sorted(visited_dirs, key=lambda item: item.count(os.sep), reverse=True)):
         if stop is not None and stop.is_set():
-            yield {"type": "cancelled"}
+            yield {
+                "type": "cancelled",
+                "result": {
+                    "scanned": collected["scanned"],
+                    "dirs": collected["dirs"],
+                    "matched": sum(collected["counts"].values()),
+                    "deleted_files": deleted_files,
+                    "deleted_dirs": deleted_dirs,
+                    "bytes": deleted_bytes,
+                    "counts": collected["counts"],
+                    "failed": failed[:50],
+                    "failed_count": failed_count,
+                    "truncated": collected["truncated"],
+                    "extra_exts": collected["extra_exts"],
+                },
+            }
             return
         current_path = directory
         event = delete_snapshot(
@@ -497,10 +552,10 @@ def iter_run_cleanup(
         "type": "progress",
         "phase": "summarizing",
         "scanned": collected["scanned"],
-        "matched": len(junk),
+        "matched": sum(collected["counts"].values()),
         "deleted_files": deleted_files,
         "deleted_dirs": deleted_dirs,
-        "failed": len(failed),
+        "failed": failed_count,
         "dirs": collected["dirs"],
         "folder_index": max(len(collected["selected"]) - 1, 0),
         "folder_total": len(collected["selected"]),
@@ -515,13 +570,13 @@ def iter_run_cleanup(
         "result": {
             "scanned": collected["scanned"],
             "dirs": collected["dirs"],
-            "matched": len(junk),
+            "matched": sum(collected["counts"].values()),
             "deleted_files": deleted_files,
             "deleted_dirs": deleted_dirs,
             "bytes": deleted_bytes,
             "counts": collected["counts"],
             "failed": failed[:50],
-            "failed_count": len(failed),
+            "failed_count": failed_count,
             "truncated": collected["truncated"],
             "extra_exts": collected["extra_exts"],
         },
