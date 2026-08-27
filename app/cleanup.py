@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import re
+import stat
 import time
 from collections import defaultdict
 from pathlib import Path
@@ -11,7 +12,6 @@ from app.subtitles.storage import (
     _path_within_roots,
     get_browse_roots,
     resolve_directory,
-    resolve_file,
 )
 
 _MAX_SCAN_FILES = 80000
@@ -79,6 +79,11 @@ def small_video_max_bytes(mb: int | None = None, *, enabled: bool = True) -> int
     return normalize_small_video_mb(mb if mb is not None else DEFAULT_SMALL_VIDEO_MB) * 1024 * 1024
 
 
+def _is_video_filename(name: str) -> bool:
+    lower = name.lower()
+    return any(lower.endswith(ext) for ext in VIDEO_EXTENSIONS)
+
+
 def classify_junk(
     name: str,
     size: int,
@@ -95,7 +100,7 @@ def classify_junk(
         return "html"
     if delete_txt and suffix in JUNK_TXT_EXTS:
         return "txt"
-    if video_limit_bytes > 0 and suffix in VIDEO_EXTENSIONS and size < video_limit_bytes:
+    if video_limit_bytes > 0 and _is_video_filename(name) and size < video_limit_bytes:
         return "small_video"
     return None
 
@@ -131,9 +136,10 @@ def _resolve_selected(folders: list[str]) -> list[Path]:
 
 def _is_skipped_entry(path: Path) -> bool:
     try:
-        return path.is_symlink()
+        st = path.lstat()
     except OSError:
         return True
+    return stat.S_ISLNK(st.st_mode)
 
 
 def _estimate_empty_dirs(
@@ -289,19 +295,23 @@ def _collect_junk(
             if event:
                 yield event
             for name in filenames:
+                if name.startswith("."):
+                    files_kept[dirpath] += 1
+                    continue
                 entry = current / name
-                if name.startswith(".") or _is_skipped_entry(entry) or not entry.is_file():
+                try:
+                    st = entry.lstat()
+                except OSError:
+                    files_kept[dirpath] += 1
+                    continue
+                if stat.S_ISLNK(st.st_mode) or not stat.S_ISREG(st.st_mode):
                     files_kept[dirpath] += 1
                     continue
                 scanned += 1
                 if not delete_now and scanned > _MAX_SCAN_FILES:
                     truncated = True
                     break
-                try:
-                    size = entry.stat().st_size
-                except OSError:
-                    files_kept[dirpath] += 1
-                    continue
+                size = st.st_size
                 reason = classify_junk(
                     name,
                     size,
@@ -419,12 +429,31 @@ def iter_scan_cleanup(
 
 
 def _safe_unlink(path: Path) -> None:
-    if path.is_symlink():
+    try:
+        st = path.lstat()
+    except OSError as exc:
+        raise ValueError(f"无法读取文件: {exc}") from exc
+    if stat.S_ISLNK(st.st_mode):
         raise ValueError("跳过符号链接")
-    target = resolve_file(str(path))
-    if target.is_symlink():
-        raise ValueError("跳过符号链接")
-    target.unlink()
+    if not stat.S_ISREG(st.st_mode):
+        raise ValueError("不是普通文件")
+    try:
+        resolved = path.resolve()
+    except OSError as exc:
+        raise ValueError(f"无法解析路径: {exc}") from exc
+    if not _path_within_roots(resolved, get_browse_roots()):
+        raise ValueError("只能操作已挂载目录内的文件")
+    last_exc: OSError | None = None
+    for attempt in range(4):
+        try:
+            path.unlink()
+            return
+        except FileNotFoundError:
+            return
+        except OSError as exc:
+            last_exc = exc
+            time.sleep(0.2 * (attempt + 1))
+    raise last_exc or OSError("删除失败")
 
 
 def _safe_rmdir(path: Path, protected: set[str], roots: list[Path]) -> bool:
