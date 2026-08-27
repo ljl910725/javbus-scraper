@@ -23,6 +23,11 @@ DEFAULT_USER_SETTINGS = {
     "ai_translate_model": "gpt-4o-mini",
     "results_page_size": 10,
     "subtitle_save_dir": "",
+    "cleanup_delete_html": True,
+    "cleanup_delete_txt": True,
+    "cleanup_delete_small_video": True,
+    "cleanup_small_video_mb": 100,
+    "cleanup_extra_exts": "",
 }
 
 USER_SETTING_KEYS = frozenset(DEFAULT_USER_SETTINGS.keys())
@@ -30,6 +35,9 @@ SECRET_SETTING_KEYS = frozenset(
     {"cd2_password", "cd2_token", "p115_cookie", "ai_translate_api_key"}
 )
 PROXY_SETTING_KEYS = frozenset({"proxy_enabled", "http_proxy", "https_proxy"})
+CLEANUP_BOOL_KEYS = frozenset(
+    {"cleanup_delete_html", "cleanup_delete_txt", "cleanup_delete_small_video"}
+)
 
 
 def proxy_active(settings_data: dict) -> bool:
@@ -110,6 +118,19 @@ def apply_settings_update(current: dict | None, updates: dict) -> dict:
             if size in {10, 20, 30, 50, 100}:
                 stored[key] = size
             continue
+        if key in CLEANUP_BOOL_KEYS:
+            stored[key] = bool(value)
+            continue
+        if key == "cleanup_small_video_mb":
+            try:
+                mb = int(value)
+            except (TypeError, ValueError):
+                continue
+            stored[key] = max(1, min(10240, mb))
+            continue
+        if key == "cleanup_extra_exts":
+            stored[key] = str(value or "").strip()
+            continue
         if value is not None:
             stored[key] = value
 
@@ -135,6 +156,18 @@ def merge_settings(user_settings: dict | None = None) -> dict:
                 continue
             if key in PROXY_SETTING_KEYS:
                 merged[key] = value
+                continue
+            if key in CLEANUP_BOOL_KEYS:
+                merged[key] = bool(value)
+                continue
+            if key == "cleanup_small_video_mb":
+                try:
+                    merged[key] = max(1, min(10240, int(value)))
+                except (TypeError, ValueError):
+                    pass
+                continue
+            if key == "cleanup_extra_exts":
+                merged[key] = str(value or "").strip()
                 continue
             if value != "":
                 merged[key] = value

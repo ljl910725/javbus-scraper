@@ -4,6 +4,11 @@ const cleanupScanBtn = document.getElementById("cleanupScanBtn");
 const cleanupRunBtn = document.getElementById("cleanupRunBtn");
 const cleanupCancelBtn = document.getElementById("cleanupCancelBtn");
 const cleanupSelectedFoldersEl = document.getElementById("cleanupSelectedFolders");
+const cleanupHintEl = document.getElementById("cleanupHint");
+const cleanupDeleteHtmlInput = document.getElementById("cleanupDeleteHtml");
+const cleanupDeleteTxtInput = document.getElementById("cleanupDeleteTxt");
+const cleanupDeleteSmallVideoInput = document.getElementById("cleanupDeleteSmallVideo");
+const cleanupSmallVideoMbInput = document.getElementById("cleanupSmallVideoMb");
 const cleanupExtraExtsInput = document.getElementById("cleanupExtraExts");
 const cleanupStatusEl = document.getElementById("cleanupStatus");
 const cleanupResultsEl = document.getElementById("cleanupResults");
@@ -26,12 +31,23 @@ const CLEANUP_REASON_LABELS = {
   extra: "额外后缀",
 };
 
+const CLEANUP_RULES_STORAGE_KEY = "javbus_cleanup_rules";
+const DEFAULT_CLEANUP_RULES = {
+  delete_html: true,
+  delete_txt: true,
+  delete_small_video: true,
+  small_video_mb: 100,
+  extra_exts: "",
+};
+
 let cleanupSelectedFolders = [];
 let cleanupBrowsePath = "";
 let cleanupBrowseParent = null;
 let cleanupScanData = null;
 let cleanupAbort = null;
 let cleanupBusy = false;
+let cleanupRulesApplying = false;
+let cleanupRulesSaveTimer = 0;
 
 function setCleanupStatus(message, isError = false, loading = false) {
   if (!cleanupStatusEl) return;
@@ -146,10 +162,155 @@ function closeCleanupFolderModal() {
   setCleanupFolderStatus("");
 }
 
+function clampCleanupSmallVideoMb(value) {
+  const mb = Number(value);
+  if (!Number.isFinite(mb)) return DEFAULT_CLEANUP_RULES.small_video_mb;
+  return Math.max(1, Math.min(10240, Math.round(mb)));
+}
+
+function readCleanupRulesFromForm() {
+  return {
+    delete_html: Boolean(cleanupDeleteHtmlInput?.checked),
+    delete_txt: Boolean(cleanupDeleteTxtInput?.checked),
+    delete_small_video: Boolean(cleanupDeleteSmallVideoInput?.checked),
+    small_video_mb: clampCleanupSmallVideoMb(cleanupSmallVideoMbInput?.value),
+    extra_exts: (cleanupExtraExtsInput?.value || "").trim(),
+  };
+}
+
+function applyCleanupRulesToForm(rules = {}) {
+  cleanupRulesApplying = true;
+  try {
+    if (cleanupDeleteHtmlInput) cleanupDeleteHtmlInput.checked = rules.delete_html !== false;
+    if (cleanupDeleteTxtInput) cleanupDeleteTxtInput.checked = rules.delete_txt !== false;
+    if (cleanupDeleteSmallVideoInput) {
+      cleanupDeleteSmallVideoInput.checked = rules.delete_small_video !== false;
+    }
+    if (cleanupSmallVideoMbInput) {
+      cleanupSmallVideoMbInput.value = String(clampCleanupSmallVideoMb(rules.small_video_mb));
+    }
+    if (cleanupExtraExtsInput) cleanupExtraExtsInput.value = rules.extra_exts || "";
+    syncCleanupRuleInputs();
+    updateCleanupHint();
+  } finally {
+    cleanupRulesApplying = false;
+  }
+}
+
+function syncCleanupRuleInputs() {
+  if (cleanupSmallVideoMbInput) {
+    cleanupSmallVideoMbInput.disabled = cleanupBusy || !cleanupDeleteSmallVideoInput?.checked;
+  }
+}
+
+function cleanupRulesSummary(rules = readCleanupRulesFromForm()) {
+  const parts = [];
+  if (rules.delete_html) parts.push("HTML / HTM");
+  if (rules.delete_txt) parts.push("TXT");
+  if (rules.delete_small_video) parts.push(`小于 ${rules.small_video_mb}MB 的视频`);
+  if (rules.extra_exts) parts.push(`额外后缀 ${rules.extra_exts}（不限大小）`);
+  return parts.length ? parts.join("、") : "未选择任何删除类型";
+}
+
+function updateCleanupHint() {
+  if (!cleanupHintEl) return;
+  cleanupHintEl.textContent =
+    `当前规则：删除 ${cleanupRulesSummary()}。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。规则会自动保存，下次打开可直接复用。`;
+}
+
+function persistCleanupRulesLocal(rules = readCleanupRulesFromForm()) {
+  try {
+    localStorage.setItem(CLEANUP_RULES_STORAGE_KEY, JSON.stringify(rules));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
+function loadCleanupRulesLocal() {
+  try {
+    const raw = localStorage.getItem(CLEANUP_RULES_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object") return null;
+    return {
+      delete_html: parsed.delete_html !== false,
+      delete_txt: parsed.delete_txt !== false,
+      delete_small_video: parsed.delete_small_video !== false,
+      small_video_mb: clampCleanupSmallVideoMb(parsed.small_video_mb),
+      extra_exts: typeof parsed.extra_exts === "string" ? parsed.extra_exts : "",
+    };
+  } catch {
+    return null;
+  }
+}
+
+async function saveCleanupRulesRemote(rules = readCleanupRulesFromForm()) {
+  if (!isLoggedIn()) return;
+  try {
+    await authFetch("/api/settings", {
+      method: "PUT",
+      body: JSON.stringify({
+        cleanup_delete_html: rules.delete_html,
+        cleanup_delete_txt: rules.delete_txt,
+        cleanup_delete_small_video: rules.delete_small_video,
+        cleanup_small_video_mb: rules.small_video_mb,
+        cleanup_extra_exts: rules.extra_exts,
+      }),
+    });
+  } catch {
+    // 保存失败不影响当前清理
+  }
+}
+
+function scheduleSaveCleanupRules() {
+  if (cleanupRulesApplying) return;
+  persistCleanupRulesLocal();
+  updateCleanupHint();
+  cleanupScanData = null;
+  window.clearTimeout(cleanupRulesSaveTimer);
+  cleanupRulesSaveTimer = window.setTimeout(() => {
+    saveCleanupRulesRemote();
+  }, 400);
+}
+
+async function loadCleanupRules() {
+  const local = loadCleanupRulesLocal();
+  if (local) {
+    applyCleanupRulesToForm(local);
+    if (isLoggedIn()) saveCleanupRulesRemote(local);
+    return;
+  }
+  applyCleanupRulesToForm(DEFAULT_CLEANUP_RULES);
+  if (!isLoggedIn()) return;
+  try {
+    const res = await authFetch("/api/settings");
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) return;
+    const settings = data.settings || {};
+    applyCleanupRulesToForm({
+      delete_html: settings.cleanup_delete_html !== false,
+      delete_txt: settings.cleanup_delete_txt !== false,
+      delete_small_video: settings.cleanup_delete_small_video !== false,
+      small_video_mb: settings.cleanup_small_video_mb,
+      extra_exts: settings.cleanup_extra_exts || "",
+    });
+    persistCleanupRulesLocal();
+  } catch {
+    // 沿用默认规则
+  }
+}
+
 function cleanupRequestBody() {
+  const rules = readCleanupRulesFromForm();
+  persistCleanupRulesLocal(rules);
+  saveCleanupRulesRemote(rules);
   return {
     folders: cleanupSelectedFolders.map((item) => item.path),
-    extra_exts: (cleanupExtraExtsInput?.value || "").trim(),
+    extra_exts: rules.extra_exts,
+    delete_html: rules.delete_html,
+    delete_txt: rules.delete_txt,
+    delete_small_video: rules.delete_small_video,
+    small_video_mb: rules.small_video_mb,
   };
 }
 
@@ -260,6 +421,10 @@ function setCleanupRunning(running) {
   if (cleanupAddFolderBtn) cleanupAddFolderBtn.disabled = running;
   if (cleanupClearFoldersBtn) cleanupClearFoldersBtn.disabled = running;
   if (cleanupExtraExtsInput) cleanupExtraExtsInput.disabled = running;
+  if (cleanupDeleteHtmlInput) cleanupDeleteHtmlInput.disabled = running;
+  if (cleanupDeleteTxtInput) cleanupDeleteTxtInput.disabled = running;
+  if (cleanupDeleteSmallVideoInput) cleanupDeleteSmallVideoInput.disabled = running;
+  syncCleanupRuleInputs();
   cleanupCancelBtn?.classList.toggle("hidden", !running);
 }
 
@@ -409,11 +574,10 @@ function scanCleanup() {
 
 function runCleanup() {
   const data = cleanupScanData;
-  const extraText = (cleanupExtraExtsInput?.value || "").trim();
+  const rules = readCleanupRulesFromForm();
   const lines = [
     "确定开始清理？删除后不可恢复。",
-    "将删除 html / txt、小于 100MB 的视频，以及额外后缀文件（额外后缀不限大小）。",
-    extraText ? `额外后缀：${extraText}` : "未填写额外后缀。",
+    `将删除：${cleanupRulesSummary(rules)}。`,
     "变空的子文件夹会被删掉，选中的根目录即使空了也不会删除。",
   ];
   if (data) {
@@ -442,9 +606,17 @@ cleanupRunBtn?.addEventListener("click", runCleanup);
 cleanupCancelBtn?.addEventListener("click", () => {
   cleanupAbort?.abort();
 });
-cleanupExtraExtsInput?.addEventListener("input", () => {
-  cleanupScanData = null;
+[cleanupDeleteHtmlInput, cleanupDeleteTxtInput, cleanupDeleteSmallVideoInput].forEach((input) => {
+  input?.addEventListener("change", scheduleSaveCleanupRules);
 });
+cleanupSmallVideoMbInput?.addEventListener("change", () => {
+  if (cleanupSmallVideoMbInput) {
+    cleanupSmallVideoMbInput.value = String(clampCleanupSmallVideoMb(cleanupSmallVideoMbInput.value));
+  }
+  scheduleSaveCleanupRules();
+});
+cleanupSmallVideoMbInput?.addEventListener("input", scheduleSaveCleanupRules);
+cleanupExtraExtsInput?.addEventListener("input", scheduleSaveCleanupRules);
 closeCleanupFolderModalBtn?.addEventListener("click", closeCleanupFolderModal);
 cleanupFolderUpBtn?.addEventListener("click", () => {
   if (cleanupBrowseParent === null) return;
@@ -481,3 +653,4 @@ cleanupFolderModal?.addEventListener("click", (event) => {
 });
 
 renderCleanupSelectedFolders();
+loadCleanupRules();

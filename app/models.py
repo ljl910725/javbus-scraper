@@ -244,6 +244,11 @@ class UserSettingsRequest(BaseModel):
     ai_translate_model: str | None = None
     results_page_size: int | None = None
     subtitle_save_dir: str | None = None
+    cleanup_delete_html: bool | None = None
+    cleanup_delete_txt: bool | None = None
+    cleanup_delete_small_video: bool | None = None
+    cleanup_small_video_mb: int | None = None
+    cleanup_extra_exts: str | None = None
 
 
 class UserSettingsResponse(BaseModel):
@@ -393,6 +398,10 @@ class MissingSubScanRequest(BaseModel):
 class CleanupRequest(BaseModel):
     folders: list[str] = Field(default_factory=list)
     extra_exts: str = ""
+    delete_html: bool = True
+    delete_txt: bool = True
+    delete_small_video: bool = True
+    small_video_mb: int = Field(default=100, ge=1, le=10240)
 
 
 class MissingSubItem(BaseModel):

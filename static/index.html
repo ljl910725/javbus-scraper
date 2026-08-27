@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>JavBus 番号爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=26082703" />
+  <link rel="stylesheet" href="/static/style.css?v=26082704" />
 </head>
 <body>
   <div class="container">
@@ -180,8 +180,26 @@
 
     <div id="tabCleanup" class="tab-panel hidden" data-tab-panel="cleanup">
     <section class="dup-panel">
-      <p class="field-hint">选择目录后递归删除 html / txt、小于 100MB 的视频，以及你填写的额外后缀（额外后缀不限大小，匹配到就删）。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。</p>
+      <p class="field-hint" id="cleanupHint">选择目录后按下方规则递归清理。删完后会清掉变空的子文件夹，选中的根目录即使空了也不会删除。删除不可恢复，建议先扫描预览。规则会自动保存，下次打开可直接复用。</p>
       <div id="cleanupSelectedFolders" class="dup-chips"></div>
+      <div class="cleanup-rules">
+        <label class="checkbox">
+          <input id="cleanupDeleteHtml" type="checkbox" checked />
+          HTML / HTM
+        </label>
+        <label class="checkbox">
+          <input id="cleanupDeleteTxt" type="checkbox" checked />
+          TXT
+        </label>
+        <div class="cleanup-size-group">
+          <label class="checkbox">
+            <input id="cleanupDeleteSmallVideo" type="checkbox" checked />
+            <span>小于</span>
+          </label>
+          <input id="cleanupSmallVideoMb" type="number" min="1" max="10240" step="1" value="100" aria-label="小视频大小上限，单位 MB" />
+          <span>MB 的视频</span>
+        </div>
+      </div>
       <label class="cleanup-exts">
         额外后缀
         <input id="cleanupExtraExts" type="text" placeholder="例如 nfo, url, jpg（逗号或空格分隔，不区分大小写）" />
@@ -408,11 +426,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26082703"></script>
-  <script src="/static/nav.js?v=26082703"></script>
-  <script src="/static/app.js?v=26082703"></script>
-  <script src="/static/duplicates.js?v=26082703"></script>
-  <script src="/static/nosub.js?v=26082703"></script>
-  <script src="/static/cleanup.js?v=26082703"></script>
+  <script src="/static/auth.js?v=26082704"></script>
+  <script src="/static/nav.js?v=26082704"></script>
+  <script src="/static/app.js?v=26082704"></script>
+  <script src="/static/duplicates.js?v=26082704"></script>
+  <script src="/static/nosub.js?v=26082704"></script>
+  <script src="/static/cleanup.js?v=26082704"></script>
 </body>
 </html>

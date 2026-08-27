@@ -17,7 +17,10 @@ from app.subtitles.storage import (
 _MAX_SCAN_FILES = 80000
 _SAMPLE_FILES = 200
 _SAMPLE_DIRS = 50
-SMALL_VIDEO_MAX_BYTES = 100 * 1024 * 1024
+DEFAULT_SMALL_VIDEO_MB = 100
+MIN_SMALL_VIDEO_MB = 1
+MAX_SMALL_VIDEO_MB = 10240
+SMALL_VIDEO_MAX_BYTES = DEFAULT_SMALL_VIDEO_MB * 1024 * 1024
 JUNK_HTML_EXTS = {".html", ".htm"}
 JUNK_TXT_EXTS = {".txt"}
 _EXTRA_SPLIT = re.compile(r"[\s,;，；]+")
@@ -62,15 +65,37 @@ def _matches_extra_ext(name: str, extra_exts: set[str]) -> bool:
     return False
 
 
-def classify_junk(name: str, size: int, extra_exts: set[str]) -> str | None:
+def normalize_small_video_mb(value) -> int:
+    try:
+        mb = int(value)
+    except (TypeError, ValueError):
+        return DEFAULT_SMALL_VIDEO_MB
+    return max(MIN_SMALL_VIDEO_MB, min(MAX_SMALL_VIDEO_MB, mb))
+
+
+def small_video_max_bytes(mb: int | None = None, *, enabled: bool = True) -> int:
+    if not enabled:
+        return 0
+    return normalize_small_video_mb(mb if mb is not None else DEFAULT_SMALL_VIDEO_MB) * 1024 * 1024
+
+
+def classify_junk(
+    name: str,
+    size: int,
+    extra_exts: set[str],
+    *,
+    delete_html: bool = True,
+    delete_txt: bool = True,
+    video_limit_bytes: int = SMALL_VIDEO_MAX_BYTES,
+) -> str | None:
     suffix = Path(name).suffix.lower()
     if extra_exts and _matches_extra_ext(name, extra_exts):
         return "extra"
-    if suffix in JUNK_HTML_EXTS:
+    if delete_html and suffix in JUNK_HTML_EXTS:
         return "html"
-    if suffix in JUNK_TXT_EXTS:
+    if delete_txt and suffix in JUNK_TXT_EXTS:
         return "txt"
-    if suffix in VIDEO_EXTENSIONS and size < SMALL_VIDEO_MAX_BYTES:
+    if video_limit_bytes > 0 and suffix in VIDEO_EXTENSIONS and size < video_limit_bytes:
         return "small_video"
     return None
 
@@ -132,8 +157,18 @@ def _estimate_empty_dirs(
     return empty
 
 
-def _collect_junk(folders: list[str], extra_raw: str, *, stop=None):
+def _collect_junk(
+    folders: list[str],
+    extra_raw: str,
+    *,
+    delete_html: bool = True,
+    delete_txt: bool = True,
+    delete_small_video: bool = True,
+    small_video_mb: int = DEFAULT_SMALL_VIDEO_MB,
+    stop=None,
+):
     extra_exts = set(normalize_extra_exts(extra_raw))
+    video_limit = small_video_max_bytes(small_video_mb, enabled=delete_small_video)
     selected = _resolve_selected(folders)
     protected = {str(path) for path in selected}
     junk: list[dict] = []
@@ -233,7 +268,14 @@ def _collect_junk(folders: list[str], extra_raw: str, *, stop=None):
                 except OSError:
                     files_kept[dirpath] += 1
                     continue
-                reason = classify_junk(name, size, extra_exts)
+                reason = classify_junk(
+                    name,
+                    size,
+                    extra_exts,
+                    delete_html=delete_html,
+                    delete_txt=delete_txt,
+                    video_limit_bytes=video_limit,
+                )
                 if not reason:
                     files_kept[dirpath] += 1
                     continue
@@ -267,9 +309,26 @@ def _collect_junk(folders: list[str], extra_raw: str, *, stop=None):
     }
 
 
-def iter_scan_cleanup(folders: list[str], extra_exts: str = "", *, stop=None):
+def iter_scan_cleanup(
+    folders: list[str],
+    extra_exts: str = "",
+    *,
+    delete_html: bool = True,
+    delete_txt: bool = True,
+    delete_small_video: bool = True,
+    small_video_mb: int = DEFAULT_SMALL_VIDEO_MB,
+    stop=None,
+):
     collected = None
-    for event in _collect_junk(folders, extra_exts, stop=stop):
+    for event in _collect_junk(
+        folders,
+        extra_exts,
+        delete_html=delete_html,
+        delete_txt=delete_txt,
+        delete_small_video=delete_small_video,
+        small_video_mb=small_video_mb,
+        stop=stop,
+    ):
         if event.get("type") in {"progress", "cancelled"}:
             yield event
             if event.get("type") == "cancelled":
@@ -337,9 +396,26 @@ def _safe_rmdir(path: Path, protected: set[str], roots: list[Path]) -> bool:
         return False
 
 
-def iter_run_cleanup(folders: list[str], extra_exts: str = "", *, stop=None):
+def iter_run_cleanup(
+    folders: list[str],
+    extra_exts: str = "",
+    *,
+    delete_html: bool = True,
+    delete_txt: bool = True,
+    delete_small_video: bool = True,
+    small_video_mb: int = DEFAULT_SMALL_VIDEO_MB,
+    stop=None,
+):
     collected = None
-    for event in _collect_junk(folders, extra_exts, stop=stop):
+    for event in _collect_junk(
+        folders,
+        extra_exts,
+        delete_html=delete_html,
+        delete_txt=delete_txt,
+        delete_small_video=delete_small_video,
+        small_video_mb=small_video_mb,
+        stop=stop,
+    ):
         if event.get("type") in {"progress", "cancelled"}:
             yield event
             if event.get("type") == "cancelled":

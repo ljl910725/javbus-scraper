@@ -1857,8 +1857,10 @@ async function pushPastedMagnetsWithCurrentBackend(links, button) {
     const success = await pushToOffline({ magnets: links, button });
     if (success) {
       setP115PasteStatus(`已推送 ${links.length} 条到 ${label}${folder && !folder.includes("选择") ? ` → ${folder}` : ""}`);
+    } else if (!pushFolderModal?.classList.contains("hidden")) {
+      setP115PasteStatus("请选择推送目录");
     } else {
-      setP115PasteStatus("推送未完成，请检查 CD2 令牌、推送目录，或在弹窗里选择目录", true);
+      setP115PasteStatus("推送未完成，请检查 CD2 令牌和推送目录", true);
     }
     return success;
   }
@@ -2182,6 +2184,7 @@ authForm.addEventListener("submit", async (event) => {
     closeAuthModal();
     updateNavUI();
     loadConfig();
+    if (typeof loadCleanupRules === "function") loadCleanupRules();
     setStatus(`${authMode === "register" ? "注册" : "登录"}成功`);
   } catch (err) {
     authError.textContent = err.message;
