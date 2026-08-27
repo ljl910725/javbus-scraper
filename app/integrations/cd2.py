@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from clouddrive2_client import CloudDriveClient
 from clouddrive2_client.proto import clouddrive_pb2
 
+from app.scraper.magnets import clean_magnet_link, is_error_10004, magnet_needs_amp_retry
 from app.user_settings import merge_settings, normalize_push_folders
 
 
@@ -235,6 +236,35 @@ def _push_result_from_response(
     )
 
 
+def _add_offline_files(client, link: str, target_folder: str):
+    request = clouddrive_pb2.AddOfflineFileRequest(
+        urls=link,
+        toFolder=target_folder,
+    )
+    return client.stub.AddOfflineFiles(
+        request,
+        metadata=client._create_authorized_metadata(),
+    )
+
+
+def _retry_amp_on_10004(client, link: str, folder: dict, target_folder: str, error_text: str):
+    if not is_error_10004(error_text) or not magnet_needs_amp_retry(link):
+        return None
+    cleaned = clean_magnet_link(link)
+    try:
+        response = _add_offline_files(client, cleaned, target_folder)
+    except Exception as exc:
+        error_text = str(exc)
+        if _is_duplicate_offline_error(error_text):
+            return CD2PushResult(
+                link=cleaned,
+                success=True,
+                message=f"任务已存在，此前已推送到 {folder['name']} ({target_folder})",
+            )
+        raise CD2Error(error_text) from exc
+    return _push_result_from_response(cleaned, response, folder, target_folder)
+
+
 def _push_magnet_sync(
     link: str,
     user_settings: dict | None = None,
@@ -247,16 +277,9 @@ def _push_magnet_sync(
     target_folder, folder = resolve_push_folder(cfg, folder_id)
     client = _create_client(user_settings)
     try:
-        request = clouddrive_pb2.AddOfflineFileRequest(
-            urls=link,
-            toFolder=target_folder,
-        )
         try:
-            response = client.stub.AddOfflineFiles(
-                request,
-                metadata=client._create_authorized_metadata(),
-            )
-            return _push_result_from_response(link, response, folder, target_folder)
+            response = _add_offline_files(client, link, target_folder)
+            result = _push_result_from_response(link, response, folder, target_folder)
         except Exception as exc:
             error_text = str(exc)
             if _is_duplicate_offline_error(error_text):
@@ -265,7 +288,16 @@ def _push_magnet_sync(
                     success=True,
                     message=f"任务已存在，此前已推送到 {folder['name']} ({target_folder})",
                 )
+            retried = _retry_amp_on_10004(client, link, folder, target_folder, error_text)
+            if retried is not None:
+                return retried
             raise CD2Error(error_text) from exc
+        if result.success:
+            return result
+        retried = _retry_amp_on_10004(client, link, folder, target_folder, result.message)
+        if retried is not None:
+            return retried
+        return result
     finally:
         client.close()
 
@@ -279,15 +311,9 @@ def _push_magnets_sync(
     target_folder, folder = resolve_push_folder(cfg, folder_id)
     client = _create_client(user_settings)
     try:
-        request = clouddrive_pb2.AddOfflineFileRequest(
-            urls="\n".join(links),
-            toFolder=target_folder,
-        )
+        joined = "\n".join(links)
         try:
-            response = client.stub.AddOfflineFiles(
-                request,
-                metadata=client._create_authorized_metadata(),
-            )
+            response = _add_offline_files(client, joined, target_folder)
         except Exception as exc:
             error_text = str(exc)
             if _is_duplicate_offline_error(error_text):
@@ -299,7 +325,27 @@ def _push_magnets_sync(
                     )
                     for link in links
                 ]
-            raise CD2Error(error_text) from exc
+            if is_error_10004(error_text) and any(magnet_needs_amp_retry(link) for link in links):
+                try:
+                    response = _add_offline_files(
+                        client,
+                        "\n".join(clean_magnet_link(link) for link in links),
+                        target_folder,
+                    )
+                except Exception as retry_exc:
+                    error_text = str(retry_exc)
+                    if _is_duplicate_offline_error(error_text):
+                        return [
+                            CD2PushResult(
+                                link=clean_magnet_link(link),
+                                success=True,
+                                message=f"任务已存在，此前已推送到 {folder['name']} ({target_folder})",
+                            )
+                            for link in links
+                        ]
+                    raise CD2Error(error_text) from retry_exc
+            else:
+                raise CD2Error(error_text) from exc
 
         if response.success:
             return [
@@ -321,6 +367,34 @@ def _push_magnets_sync(
                 )
                 for link in links
             ]
+
+        if is_error_10004(error_message) and any(magnet_needs_amp_retry(link) for link in links):
+            cleaned = [clean_magnet_link(link) for link in links]
+            try:
+                retry_response = _add_offline_files(client, "\n".join(cleaned), target_folder)
+            except Exception as retry_exc:
+                error_text = str(retry_exc)
+                if _is_duplicate_offline_error(error_text):
+                    return [
+                        CD2PushResult(
+                            link=item,
+                            success=True,
+                            message=f"任务已存在，此前已推送到 {folder['name']} ({target_folder})",
+                        )
+                        for item in cleaned
+                    ]
+                raise CD2Error(error_text) from retry_exc
+            if retry_response.success or _is_duplicate_offline_error(retry_response.errorMessage or ""):
+                return [
+                    CD2PushResult(
+                        link=item,
+                        success=True,
+                        message=f"已添加到 {folder['name']} ({target_folder})",
+                    )
+                    for item in cleaned
+                ]
+            error_message = retry_response.errorMessage or error_message
+            links = cleaned
 
         return [
             CD2PushResult(

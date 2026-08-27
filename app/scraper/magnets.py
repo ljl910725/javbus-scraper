@@ -8,6 +8,8 @@ from app.scraper.client import JavBusClient
 
 _SIZE_UNITS = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
 _INFOHASH_RE = re.compile(r"btih:([a-zA-Z0-9]+)", re.IGNORECASE)
+_ERROR_10004_RE = re.compile(r"(?<!\d)10004(?!\d)")
+_AMP_TOKEN = "amp;"
 _UHD_RE = re.compile(r"超清|4k|uhd|2160p", re.IGNORECASE)
 UHD_MIN_BYTES = 10 * 1024**3
 UHD_MIN_MB = 10 * 1024
@@ -16,6 +18,33 @@ UHD_MIN_MB = 10 * 1024
 def magnet_infohash(link: str) -> str:
     match = _INFOHASH_RE.search(link or "")
     return (match.group(1) if match else "").upper()
+
+
+def clean_magnet_link(link: str) -> str:
+    return (link or "").replace(_AMP_TOKEN, "")
+
+
+def magnet_needs_amp_retry(link: str) -> bool:
+    return _AMP_TOKEN in (link or "")
+
+
+def is_error_10004(*parts) -> bool:
+    for part in parts:
+        if isinstance(part, dict):
+            for key in ("errcode", "errno", "error_code", "code", "errNo", "err_code"):
+                value = part.get(key)
+                if value is not None and str(value).strip() == "10004":
+                    return True
+            blob = " ".join(
+                str(part.get(key) or "")
+                for key in ("error_msg", "error", "message", "errorMessage")
+            )
+            if _ERROR_10004_RE.search(blob):
+                return True
+            continue
+        if _ERROR_10004_RE.search(str(part or "")):
+            return True
+    return False
 
 
 def size_suggests_uhd(*, size_text: str = "", size_mb: int | float | None = None) -> bool:
@@ -120,7 +149,7 @@ def _parse_magnet_row(row, seen: set[str]) -> MagnetLink | None:
     if not link_el:
         return None
 
-    link = link_el["href"]
+    link = clean_magnet_link(link_el["href"])
     if link in seen:
         return None
     seen.add(link)

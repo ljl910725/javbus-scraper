@@ -5,7 +5,7 @@ import httpx
 
 from app.config import settings
 from app.models import MagnetLink
-from app.scraper.magnets import format_size_mb, size_suggests_uhd, sort_magnets
+from app.scraper.magnets import clean_magnet_link, format_size_mb, size_suggests_uhd, sort_magnets
 
 _UHD_RE = re.compile(r"4k|uhd|超清|2160p", re.IGNORECASE)
 _UHD_FLAG_TRUE = {"1", "true", "yes", "y", "uhd", "4k", "ultra", "超清"}
@@ -38,7 +38,7 @@ def title_has_subtitle(title: str) -> bool:
 
 
 def _item_to_magnet(item: dict) -> MagnetLink | None:
-    link = str(item.get("download_url") or "").strip()
+    link = clean_magnet_link(str(item.get("download_url") or "").strip())
     if not link.startswith("magnet:"):
         return None
 

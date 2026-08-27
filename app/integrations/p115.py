@@ -7,6 +7,7 @@ from pathlib import Path
 import httpx
 
 from app.config import settings as app_settings
+from app.scraper.magnets import clean_magnet_link, is_error_10004, magnet_needs_amp_retry
 from app.user_settings import effective_proxies, merge_settings
 
 P115_HEADERS = {
@@ -124,6 +125,46 @@ async def check_p115_status(user_settings: dict | None = None) -> dict:
         }
 
 
+async def _add_offline_url(
+    client: httpx.AsyncClient,
+    link: str,
+    uid: str,
+    sign: str,
+    offline_time: str,
+    folder_cid: str,
+) -> dict:
+    payload = {
+        "url": link,
+        "uid": uid,
+        "sign": sign,
+        "time": offline_time,
+    }
+    if folder_cid:
+        payload["wp_path_id"] = folder_cid
+    response = await client.post(
+        "https://115.com/lixian/",
+        params={"ct": "lixian", "ac": "add_task_url"},
+        data=payload,
+    )
+    try:
+        return response.json()
+    except Exception:
+        return {}
+
+
+def _p115_fail_message(data: dict, fallback: str = "推送失败") -> str:
+    code = ""
+    for key in ("errcode", "errno", "error_code", "code"):
+        value = data.get(key)
+        if value is not None and str(value).strip() != "":
+            code = str(value).strip()
+            break
+    message = data.get("error_msg") or data.get("error") or fallback
+    if code and code not in str(message):
+        return f"{message} ({code})"
+    return message
+
+
 async def push_magnet(link: str, user_settings: dict | None = None) -> P115PushResult:
     if not link.startswith("magnet:"):
         raise P115Error("仅支持 magnet 链接")
@@ -133,23 +174,8 @@ async def push_magnet(link: str, user_settings: dict | None = None) -> P115PushR
         cookies = _parse_cookies(cfg["p115_cookie"])
         uid = _extract_uid(cookies)
         sign, offline_time = await _get_offline_signature(client, uid)
-
-        payload = {
-            "url": link,
-            "uid": uid,
-            "sign": sign,
-            "time": offline_time,
-        }
         folder_cid = str(cfg.get("p115_folder_cid") or "").strip()
-        if folder_cid:
-            payload["wp_path_id"] = folder_cid
-
-        response = await client.post(
-            "https://115.com/lixian/",
-            params={"ct": "lixian", "ac": "add_task_url"},
-            data=payload,
-        )
-        data = response.json()
+        data = await _add_offline_url(client, link, uid, sign, offline_time, folder_cid)
 
         if data.get("state"):
             return P115PushResult(
@@ -159,10 +185,22 @@ async def push_magnet(link: str, user_settings: dict | None = None) -> P115PushR
                 message="推送成功",
             )
 
+        if is_error_10004(data) and magnet_needs_amp_retry(link):
+            cleaned = clean_magnet_link(link)
+            data = await _add_offline_url(client, cleaned, uid, sign, offline_time, folder_cid)
+            if data.get("state"):
+                return P115PushResult(
+                    link=cleaned,
+                    success=True,
+                    task_name=data.get("name", ""),
+                    message="推送成功",
+                )
+            link = cleaned
+
         return P115PushResult(
             link=link,
             success=False,
-            message=data.get("error_msg") or data.get("error") or "推送失败",
+            message=_p115_fail_message(data),
         )
 
 
@@ -209,12 +247,16 @@ async def push_magnets(links: list[str], user_settings: dict | None = None) -> l
             data = response.json()
 
             if not data.get("state"):
+                if is_error_10004(data):
+                    for link in chunk:
+                        results.append(await push_magnet(link, user_settings))
+                    continue
                 for link in chunk:
                     results.append(
                         P115PushResult(
                             link=link,
                             success=False,
-                            message=data.get("error_msg") or "批量推送失败",
+                            message=_p115_fail_message(data, "批量推送失败"),
                         )
                     )
                 continue
@@ -230,12 +272,14 @@ async def push_magnets(links: list[str], user_settings: dict | None = None) -> l
                             message="推送成功",
                         )
                     )
+                elif is_error_10004(item) and magnet_needs_amp_retry(link):
+                    results.append(await push_magnet(link, user_settings))
                 else:
                     results.append(
                         P115PushResult(
                             link=link,
                             success=False,
-                            message=item.get("error_msg") or "推送失败",
+                            message=_p115_fail_message(item),
                         )
                     )
 
