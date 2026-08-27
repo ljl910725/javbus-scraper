@@ -23,6 +23,8 @@ from app.models import (
     NosubReplaceJob,
     NosubReplaceJobListResponse,
     NosubReplaceItem,
+    NosubReplaceMarkReplacedRequest,
+    NosubReplaceMarkReplacedResponse,
     NosubReplaceRequest,
 )
 from app.replace_job import FolderLockBusy, release_folder_locks, run_replace_job_events, try_acquire_folder_locks
@@ -261,6 +263,46 @@ async def replace_missing_subs_stream(body: NosubReplaceRequest, request: Reques
             "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
+    )
+
+
+@router.post("/replace/mark-replaced", response_model=NosubReplaceMarkReplacedResponse)
+async def mark_replace_item_replaced(
+    body: NosubReplaceMarkReplacedRequest,
+    user: CurrentUser,
+) -> NosubReplaceMarkReplacedResponse:
+    path = (body.path or "").strip()
+    if not path and body.item_id is None:
+        raise HTTPException(status_code=400, detail="缺少文件路径")
+
+    result = db.mark_nosub_replace_items_replaced(
+        user["id"],
+        path=path,
+        item_id=body.item_id,
+        magnet_title=body.magnet_title or "",
+        message=body.message or "手动查找推送成功并删除原文件",
+    )
+    if path:
+        ignored = db.get_ignored_missing_sub_by_path(user["id"], path)
+        if ignored and ignored.get("status") != "replaced":
+            db.update_ignored_missing_sub(
+                ignored["id"],
+                magnet_title=body.magnet_title or "",
+                message=body.message or "手动查找推送成功并删除原文件",
+                mark_replaced=True,
+            )
+
+    jobs = [_replace_job(job) for job in result.get("jobs") or []]
+    items = [NosubReplaceItem(**item) for item in result.get("items") or []]
+    if items:
+        message = f"已将 {len(items)} 条失败记录改为替换成功"
+    else:
+        message = "推送成功"
+    return NosubReplaceMarkReplacedResponse(
+        success=True,
+        message=message,
+        items=items,
+        jobs=jobs,
     )
 
 

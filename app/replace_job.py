@@ -9,10 +9,8 @@ from pathlib import Path
 from app import db
 from app.config import settings
 from app.duplicates import delete_video_file
-from app.ignored_replace import pick_subtitle_magnet
+from app.ignored_replace import take_new_subtitle_magnets, try_push_subtitle_magnets
 from app.integrations import push as push_service
-from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
-from app.integrations.p115 import P115Error, P115NotConfiguredError
 from app.missing_subs import iter_scan_missing_subs
 from app.scraper.article_torrents import fetch_article_torrents
 from app.scraper.service import ScrapeError, scrape_movie
@@ -121,15 +119,16 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
     if not backend:
         return _item_payload(item, status="push_failed", message="未配置推送方式，请在设置页配置 CD2 或 115")
 
-    magnet = None
+    magnets = []
     used_javbus = False
+    seen: set[str] = set()
     try:
         torrents = await fetch_article_torrents(code)
-        magnet = pick_subtitle_magnet(torrents)
-        if magnet is None:
+        magnets = take_new_subtitle_magnets(torrents, seen)
+        if not magnets:
             used_javbus = True
             movie = await scrape_movie(code, user_settings=stored)
-            magnet = pick_subtitle_magnet(movie.magnets)
+            magnets = take_new_subtitle_magnets(movie.magnets, seen)
     except ScrapeError as exc:
         return _item_payload(item, status="error", message=f"请求接口失败: {exc}")
     except Exception as exc:
@@ -138,7 +137,7 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
     if used_javbus:
         await asyncio.sleep(max(0.3, float(settings.request_delay)))
 
-    if magnet is None:
+    if not magnets:
         if path:
             ignored = db.add_ignored_missing_sub(
                 user["id"],
@@ -156,30 +155,43 @@ async def replace_missing_file(item: dict, *, user: dict, stored: dict) -> dict:
 
     folder_id = push_service.default_folder_id(user_cfg)
     folder = push_service.folder_meta(user_cfg, folder_id)
-    try:
-        push_result = await push_service.push_magnet(magnet.link, stored, folder_id)
-    except (CD2NotConfiguredError, P115NotConfiguredError, CD2Error, P115Error) as exc:
-        return _item_payload(
-            item,
-            status="push_failed",
-            message=str(exc) or f"推送{label}失败",
-            magnet_title=magnet.title,
-        )
-    except Exception as exc:
-        return _item_payload(
-            item,
-            status="push_failed",
-            message=f"推送{label}失败: {exc}",
-            magnet_title=magnet.title,
-        )
+    push_result, magnet, error, tried = await try_push_subtitle_magnets(
+        magnets, stored, folder_id, label
+    )
 
-    pushed = bool(push_result.success) or "已存在" in (push_result.message or "")
-    if not pushed:
+    if push_result is None and magnet is not None and not used_javbus:
+        config_failed = "未配置" in (error or "")
+        if not config_failed:
+            try:
+                await asyncio.sleep(max(0.3, float(settings.request_delay)))
+                movie = await scrape_movie(code, user_settings=stored)
+                extra = take_new_subtitle_magnets(movie.magnets, seen)
+            except Exception as exc:
+                extra = []
+                if error:
+                    error = f"{error}；补充源请求失败: {exc}"
+                else:
+                    error = f"补充源请求失败: {exc}"
+            if extra:
+                extra_result, extra_magnet, extra_error, extra_tried = await try_push_subtitle_magnets(
+                    extra, stored, folder_id, label
+                )
+                tried += extra_tried
+                if extra_result is not None and extra_magnet is not None:
+                    push_result, magnet, error = extra_result, extra_magnet, ""
+                else:
+                    magnet = extra_magnet or magnet
+                    last_error = extra_error.split("：", 1)[-1] if extra_error else error
+                    error = f"已尝试 {tried} 条字幕磁力均失败"
+                    if last_error:
+                        error += f"：{last_error}"
+
+    if push_result is None or magnet is None:
         return _item_payload(
             item,
             status="push_failed",
-            message=push_result.message or f"推送{label}失败",
-            magnet_title=magnet.title,
+            message=error or f"推送{label}失败",
+            magnet_title=(magnet.title if magnet else ""),
         )
 
     db.add_push_history(

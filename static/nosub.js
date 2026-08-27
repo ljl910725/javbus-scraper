@@ -727,20 +727,62 @@ async function checkNosubIgnored(button, itemId = null) {
 
 async function deleteNosubOriginal(item) {
   if (!item?.path) return;
+  const res = await authFetch("/api/missing-subs/delete", {
+    method: "POST",
+    body: JSON.stringify({ path: item.path }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw new Error(data.detail || "删除原文件失败");
+  removeNosubItemFromView(item.path);
+  setNosubLookupStatus("推送成功，已删除原来的无字幕文件");
+  setNosubStatus(`已推送到 ${nosubPushLabel()}，并删除 ${item.name}`);
+  closeNosubLookupModal();
+}
+
+function applyNosubReplaceMarkedJobs(jobs) {
+  if (!Array.isArray(jobs) || !jobs.length) return;
+  for (const job of jobs) {
+    if (nosubReplaceReportJob?.id === job.id) {
+      nosubReplaceReportJob = job;
+      renderNosubReplaceReport(job);
+    }
+    if (nosubReplaceLiveJob?.id === job.id) {
+      nosubReplaceLiveJob = job;
+      if (nosubReplaceLiveState) {
+        nosubReplaceLiveState.items = job.items || nosubReplaceLiveState.items || [];
+        nosubReplaceLiveState.counts = {
+          replaced_count: job.replaced_count || 0,
+          not_found_count: job.not_found_count || 0,
+          push_failed_count: job.push_failed_count || 0,
+          error_count: job.error_count || 0,
+        };
+        renderNosubReplaceLive();
+      }
+    }
+  }
+  if (nosubView === "logs") loadNosubReplaceLogs();
+}
+
+async function markNosubReplaceManualSuccess(item, pushData, message) {
+  const path = item?.path || "";
+  const itemId = Number(item?.replaceItemId || item?.id || 0) || null;
+  if (!path && !itemId) return;
+  const successRow = (pushData?.results || []).find((row) => row.success);
   try {
-    const res = await authFetch("/api/missing-subs/delete", {
+    const res = await authFetch("/api/missing-subs/replace/mark-replaced", {
       method: "POST",
-      body: JSON.stringify({ path: item.path }),
+      body: JSON.stringify({
+        path,
+        item_id: itemId,
+        magnet_title: successRow?.task_name || "",
+        message,
+      }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "删除原文件失败");
-    removeNosubItemFromView(item.path);
-    setNosubLookupStatus("推送成功，已删除原来的无字幕文件");
-    setNosubStatus(`已推送到 CD2，并删除 ${item.name}`);
-    closeNosubLookupModal();
-  } catch (err) {
-    setNosubLookupStatus(`推送成功，但删除原文件失败: ${err.message}`, true);
-    setNosubStatus(`推送成功，但删除原文件失败: ${err.message}`, true);
+    if (!res.ok) return;
+    applyNosubReplaceMarkedJobs(data.jobs || []);
+  } catch {
+    // 推送已经成功，状态回写失败不影响这次替换
   }
 }
 
@@ -939,7 +981,7 @@ function renderNosubReplaceResultItem(item, { pending = false } = {}) {
       ${item.path ? `<div class="nosub-replace-live-item-path">${escapeHtml(item.path)}</div>` : ""}
       ${
         canLookup
-          ? `<div class="nosub-replace-live-item-actions"><button class="ghost-btn nosub-replace-lookup-btn" type="button" data-code="${escapeAttr(item.code || "")}" data-name="${escapeAttr(item.name || item.code || "")}" data-path="${escapeAttr(item.path || "")}">查找</button></div>`
+          ? `<div class="nosub-replace-live-item-actions"><button class="ghost-btn nosub-replace-lookup-btn" type="button" data-id="${escapeAttr(String(item.id || ""))}" data-code="${escapeAttr(item.code || "")}" data-name="${escapeAttr(item.name || item.code || "")}" data-path="${escapeAttr(item.path || "")}">查找</button></div>`
           : ""
       }
     </article>`;
@@ -947,6 +989,8 @@ function renderNosubReplaceResultItem(item, { pending = false } = {}) {
 
 function lookupNosubReplaceResult(button) {
   const item = {
+    id: Number(button?.dataset.id || 0) || 0,
+    replaceItemId: Number(button?.dataset.id || 0) || 0,
     code: button?.dataset.code || "",
     name: button?.dataset.name || "",
     path: button?.dataset.path || "",
@@ -1368,10 +1412,20 @@ async function runNosubReplace() {
 }
 
 function afterNosubPushSuccess() {
-  return async () => {
-    if (pendingNosubItem) {
-      await deleteNosubOriginal(pendingNosubItem);
+  return async (pushData) => {
+    if (!pendingNosubItem) return;
+    const item = pendingNosubItem;
+    let message = "手动查找推送成功并删除原文件";
+    if (item.path) {
+      try {
+        await deleteNosubOriginal(item);
+      } catch (err) {
+        message = `手动查找推送成功，但删除原文件失败: ${err.message || "删除失败"}`;
+        setNosubLookupStatus(message, true);
+        setNosubStatus(message, true);
+      }
     }
+    await markNosubReplaceManualSuccess(item, pushData, message);
   };
 }
 

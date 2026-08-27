@@ -9,17 +9,92 @@ from app.integrations import push as push_service
 from app.integrations.cd2 import CD2Error, CD2NotConfiguredError
 from app.integrations.p115 import P115Error, P115NotConfiguredError
 from app.models import MagnetLink
+from app.scraper.magnets import magnet_infohash, sort_magnets
 from app.scraper.service import ScrapeError, scrape_movie
 from app.user_settings import merge_settings
 
 _job_lock = asyncio.Lock()
 
 
+def magnet_key(magnet: MagnetLink | None) -> str:
+    if magnet is None:
+        return ""
+    return magnet_infohash(magnet.link) or (magnet.link or "").strip().lower()
+
+
+def list_subtitle_magnets(magnets: list[MagnetLink] | None) -> list[MagnetLink]:
+    picked: list[MagnetLink] = []
+    seen: set[str] = set()
+    for magnet in sort_magnets(list(magnets or [])):
+        if not magnet.has_subtitle:
+            continue
+        link = (magnet.link or "").strip()
+        if not link.startswith("magnet:"):
+            continue
+        key = magnet_key(magnet)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        picked.append(magnet)
+    return picked
+
+
 def pick_subtitle_magnet(magnets: list[MagnetLink] | None) -> MagnetLink | None:
-    for magnet in magnets or []:
-        if magnet.has_subtitle and (magnet.link or "").startswith("magnet:"):
-            return magnet
-    return None
+    items = list_subtitle_magnets(magnets)
+    return items[0] if items else None
+
+
+def take_new_subtitle_magnets(
+    magnets: list[MagnetLink] | None,
+    seen: set[str],
+) -> list[MagnetLink]:
+    added: list[MagnetLink] = []
+    for magnet in list_subtitle_magnets(magnets):
+        key = magnet_key(magnet)
+        if not key or key in seen:
+            continue
+        seen.add(key)
+        added.append(magnet)
+    return added
+
+
+def _push_accepted(push_result) -> bool:
+    return bool(getattr(push_result, "success", False)) or "已存在" in (getattr(push_result, "message", "") or "")
+
+
+async def try_push_subtitle_magnets(
+    magnets: list[MagnetLink],
+    stored: dict,
+    folder_id: str | None,
+    label: str,
+) -> tuple[object | None, MagnetLink | None, str, int]:
+    last_error = ""
+    last_magnet: MagnetLink | None = None
+    tried = 0
+    for index, magnet in enumerate(magnets):
+        last_magnet = magnet
+        tried += 1
+        if index:
+            await asyncio.sleep(0.4)
+        try:
+            push_result = await push_service.push_magnet(magnet.link, stored, folder_id)
+        except (CD2NotConfiguredError, P115NotConfiguredError) as exc:
+            return None, magnet, str(exc) or "未配置推送方式", tried
+        except (CD2Error, P115Error) as exc:
+            last_error = str(exc) or f"推送{label}失败"
+            continue
+        except Exception as exc:
+            last_error = f"推送{label}失败: {exc}"
+            continue
+        if _push_accepted(push_result):
+            return push_result, magnet, "", tried
+        last_error = push_result.message or f"推送{label}失败"
+    if tried > 1:
+        message = f"已尝试 {tried} 条字幕磁力均失败"
+        if last_error:
+            message += f"：{last_error}"
+        return None, last_magnet, message, tried
+    return None, last_magnet, last_error or f"推送{label}失败", tried
 
 
 def _file_exists(path: str) -> bool:
@@ -79,8 +154,8 @@ async def check_ignored_item(item: dict) -> dict:
         result["message"] = message
         return result
 
-    magnet = pick_subtitle_magnet(movie.magnets)
-    if not magnet:
+    magnets = list_subtitle_magnets(movie.magnets)
+    if not magnets:
         message = "暂无字幕版本"
         db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
         result["message"] = message
@@ -88,26 +163,14 @@ async def check_ignored_item(item: dict) -> dict:
 
     folder_id = push_service.default_folder_id(user_cfg)
     folder = push_service.folder_meta(user_cfg, folder_id)
-    try:
-        push_result = await push_service.push_magnet(magnet.link, stored, folder_id)
-    except (CD2NotConfiguredError, P115NotConfiguredError, CD2Error, P115Error) as exc:
-        message = str(exc)
-        db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
-        result["message"] = message
-        return result
-    except Exception as exc:
-        message = f"推送{label}失败: {exc}"
-        db.update_ignored_missing_sub(item_id, message=message, mark_checked=True)
-        result["message"] = message
-        return result
-
-    pushed = bool(push_result.success) or "已存在" in (push_result.message or "")
-    if not pushed:
-        message = push_result.message or f"推送{label}失败"
+    push_result, magnet, message, _tried = await try_push_subtitle_magnets(
+        magnets, stored, folder_id, label
+    )
+    if not push_result or magnet is None:
         db.update_ignored_missing_sub(
             item_id,
-            magnet_link=magnet.link,
-            magnet_title=magnet.title,
+            magnet_link=(magnet.link if magnet else ""),
+            magnet_title=(magnet.title if magnet else ""),
             message=message,
             mark_checked=True,
         )

@@ -508,3 +508,17 @@ class NosubReplaceJob(BaseModel):
 
 class NosubReplaceJobListResponse(BaseModel):
     items: list[NosubReplaceJob] = Field(default_factory=list)
+
+
+class NosubReplaceMarkReplacedRequest(BaseModel):
+    path: str = ""
+    item_id: int | None = None
+    magnet_title: str = ""
+    message: str = ""
+
+
+class NosubReplaceMarkReplacedResponse(BaseModel):
+    success: bool = True
+    message: str = ""
+    items: list[NosubReplaceItem] = Field(default_factory=list)
+    jobs: list[NosubReplaceJob] = Field(default_factory=list)

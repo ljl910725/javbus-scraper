@@ -562,6 +562,99 @@ def add_nosub_replace_item(
         return _replace_item_row(row)
 
 
+_REPLACE_COUNT_COLS = {
+    "replaced": "replaced_count",
+    "not_found": "not_found_count",
+    "push_failed": "push_failed_count",
+    "error": "error_count",
+}
+
+
+def mark_nosub_replace_items_replaced(
+    user_id: int,
+    *,
+    path: str = "",
+    item_id: int | None = None,
+    magnet_title: str = "",
+    message: str = "",
+) -> dict:
+    path = (path or "").strip()
+    updated_items: list[dict] = []
+    job_ids: set[int] = set()
+    with get_connection() as conn:
+        if not path and item_id is not None:
+            row = conn.execute(
+                """
+                SELECT i.path
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE i.id = ? AND j.user_id = ?
+                """,
+                (int(item_id), user_id),
+            ).fetchone()
+            if row:
+                path = (row["path"] or "").strip()
+
+        if path:
+            rows = conn.execute(
+                """
+                SELECT i.*
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE j.user_id = ? AND i.path = ? AND i.status != 'replaced'
+                """,
+                (user_id, path),
+            ).fetchall()
+        elif item_id is not None:
+            rows = conn.execute(
+                """
+                SELECT i.*
+                FROM nosub_replace_items i
+                JOIN nosub_replace_jobs j ON j.id = i.job_id
+                WHERE i.id = ? AND j.user_id = ? AND i.status != 'replaced'
+                """,
+                (int(item_id), user_id),
+            ).fetchall()
+        else:
+            rows = []
+
+        for row in rows:
+            old_status = row["status"] or ""
+            conn.execute(
+                """
+                UPDATE nosub_replace_items
+                SET status = 'replaced', magnet_title = ?, message = ?
+                WHERE id = ?
+                """,
+                (magnet_title or "", message or "手动查找推送成功", row["id"]),
+            )
+            old_col = _REPLACE_COUNT_COLS.get(old_status)
+            if old_col:
+                conn.execute(
+                    f"""
+                    UPDATE nosub_replace_jobs
+                    SET {old_col} = MAX(0, {old_col} - 1),
+                        replaced_count = replaced_count + 1
+                    WHERE id = ?
+                    """,
+                    (row["job_id"],),
+                )
+            job_ids.add(int(row["job_id"]))
+            updated = conn.execute(
+                "SELECT * FROM nosub_replace_items WHERE id = ?",
+                (row["id"],),
+            ).fetchone()
+            if updated:
+                updated_items.append(_replace_item_row(updated))
+        conn.commit()
+
+    jobs = [get_nosub_replace_job(job_id, user_id) for job_id in sorted(job_ids)]
+    return {
+        "items": updated_items,
+        "jobs": [job for job in jobs if job],
+    }
+
+
 def update_nosub_replace_job(
     job_id: int,
     *,
