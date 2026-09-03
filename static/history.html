@@ -3,15 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="theme-color" content="#090a0c" />
   <title>推送历史 - JavBus 爬虫</title>
-  <link rel="stylesheet" href="/static/style.css?v=26082706" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/style.css?v=26090301" />
 </head>
-<body>
+<body class="app-root">
   <div class="container">
     <header class="top-header">
-      <div>
-        <h1>推送历史</h1>
-        <p class="subtitle">查看账号下的磁力推送记录与失败原因</p>
+      <div class="brand-cluster">
+        <div class="brand-glyph" aria-hidden="true">JB</div>
+        <div>
+          <h1>推送历史</h1>
+          <p class="subtitle">查看账号下的磁力推送记录与失败原因</p>
+        </div>
       </div>
       <div class="header-actions">
         <div id="userMenu" class="user-menu hidden">
@@ -44,8 +51,8 @@
     </section>
   </div>
 
-  <script src="/static/auth.js?v=26082706"></script>
-  <script src="/static/nav.js?v=26082706"></script>
-  <script src="/static/history.js?v=26082706"></script>
+  <script src="/static/auth.js?v=26090301"></script>
+  <script src="/static/nav.js?v=26090301"></script>
+  <script src="/static/history.js?v=26090301"></script>
 </body>
 </html>
