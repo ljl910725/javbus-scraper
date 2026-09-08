@@ -1,4 +1,6 @@
 import base64
+import gzip
+import hashlib
 import re
 import time
 from dataclasses import dataclass
@@ -295,6 +297,7 @@ _TORRENT_CACHE_URLS = (
     "https://itorrents.org/torrent/{hash}.torrent",
     "https://btcache.me/torrent/{hash}",
     "https://torrage.info/torrent.php?h={hash}",
+    "https://torrage.info/download?h={hash}",
     "https://watercache.nanobyte.org/torrent/{hash}",
 )
 
@@ -318,42 +321,71 @@ def extract_infohash(magnet: str) -> str:
     raise P115Error("磁力 infohash 格式无效")
 
 
-def _bdecode(data: bytes):
-    def parse(index: int):
-        if index >= len(data):
-            raise ValueError("种子内容不完整")
-        flag = data[index : index + 1]
-        if flag == b"i":
-            end = data.index(b"e", index)
-            return int(data[index + 1 : end]), end + 1
-        if flag == b"l":
-            index += 1
-            items = []
-            while data[index : index + 1] != b"e":
-                item, index = parse(index)
-                items.append(item)
-            return items, index + 1
-        if flag == b"d":
-            index += 1
-            mapping = {}
-            while data[index : index + 1] != b"e":
-                key, index = parse(index)
-                value, index = parse(index)
-                mapping[key] = value
-            return mapping, index + 1
-        colon = data.index(b":", index)
-        length = int(data[index:colon])
-        start = colon + 1
-        return data[start : start + length], start + length
+def _bdecode_at(data: bytes, index: int = 0) -> tuple[object, int]:
+    if index >= len(data):
+        raise ValueError("种子内容不完整")
+    flag = data[index : index + 1]
+    if flag == b"i":
+        end = data.index(b"e", index)
+        return int(data[index + 1 : end]), end + 1
+    if flag == b"l":
+        index += 1
+        items = []
+        while data[index : index + 1] != b"e":
+            item, index = _bdecode_at(data, index)
+            items.append(item)
+        return items, index + 1
+    if flag == b"d":
+        index += 1
+        mapping = {}
+        while data[index : index + 1] != b"e":
+            key, index = _bdecode_at(data, index)
+            value, index = _bdecode_at(data, index)
+            mapping[key] = value
+        return mapping, index + 1
+    colon = data.index(b":", index)
+    length = int(data[index:colon])
+    start = colon + 1
+    return data[start : start + length], start + length
 
-    value, _ = parse(0)
+
+def _bdecode(data: bytes):
+    value, _ = _bdecode_at(data, 0)
     return value
+
+
+def torrent_infohash(raw: bytes) -> str:
+    marker = b"4:info"
+    idx = raw.find(marker)
+    if idx < 0:
+        raise P115Error("种子缺少 info")
+    start = idx + len(marker)
+    _, end = _bdecode_at(raw, start)
+    return hashlib.sha1(raw[start:end]).hexdigest()
+
+
+def _maybe_decompress_torrent(data: bytes) -> bytes:
+    if data.startswith(b"\x1f\x8b"):
+        try:
+            return gzip.decompress(data)
+        except Exception as exc:
+            raise P115Error("种子 gzip 解压失败") from exc
+    return data
 
 
 def _decode_torrent_text(value) -> str:
     if isinstance(value, bytes):
         return value.decode("utf-8", "replace")
     return str(value)
+
+
+def _info_text(mapping: dict, *keys: bytes) -> str:
+    for key in keys:
+        if key in mapping:
+            text = _decode_torrent_text(mapping[key]).strip()
+            if text:
+                return text
+    return ""
 
 
 def parse_torrent_files(raw: bytes) -> tuple[str, list[dict]]:
@@ -364,11 +396,11 @@ def parse_torrent_files(raw: bytes) -> tuple[str, list[dict]]:
         info = meta[b"info"]
     except Exception as exc:
         raise P115Error(f"解析种子失败: {exc}") from exc
-    name = _decode_torrent_text(info.get(b"name") or b"")
+    name = _info_text(info, b"name.utf-8", b"name")
     files: list[dict] = []
     if b"files" in info:
         for item in info[b"files"]:
-            parts = item.get(b"path") or []
+            parts = item.get(b"path.utf-8") or item.get(b"path") or []
             rel = "/".join(_decode_torrent_text(part) for part in parts)
             path = f"{name}/{rel}" if name else rel
             files.append({"path": path, "size": int(item.get(b"length") or 0)})
@@ -391,7 +423,12 @@ def _default_wanted(files: list[dict]) -> list[bool]:
 
 
 async def _fetch_torrent_bytes(info_hash: str) -> bytes:
-    digest = info_hash.upper()
+    expected = (info_hash or "").strip().lower()
+    if not expected:
+        raise P115Error("缺少 infohash")
+    last_error = "未找到种子缓存"
+    fake_count = 0
+    seen_urls: set[str] = set()
     async with httpx.AsyncClient(
         headers={
             "User-Agent": P115_HEADERS["User-Agent"],
@@ -400,21 +437,35 @@ async def _fetch_torrent_bytes(info_hash: str) -> bytes:
         timeout=12.0,
         follow_redirects=True,
     ) as client:
-        last_error = "未找到种子缓存"
         for template in _TORRENT_CACHE_URLS:
-            url = template.format(hash=digest)
-            try:
-                response = await client.get(url)
-                if response.status_code != 200:
-                    last_error = f"{url} HTTP {response.status_code}"
+            for digest in (expected.upper(), expected):
+                url = template.format(hash=digest)
+                if url in seen_urls:
                     continue
-                data = response.content or b""
-                if data.startswith(b"d") and b"4:info" in data:
+                seen_urls.add(url)
+                try:
+                    response = await client.get(url)
+                    if response.status_code != 200:
+                        last_error = f"{url} HTTP {response.status_code}"
+                        continue
+                    data = _maybe_decompress_torrent(response.content or b"")
+                    if not (data.startswith(b"d") and b"4:info" in data):
+                        last_error = f"{url} 返回的不是种子"
+                        continue
+                    got = torrent_infohash(data)
+                    if got != expected:
+                        fake_count += 1
+                        last_error = f"{url} 返回假种子（infohash 不匹配）"
+                        continue
                     return data
-                last_error = f"{url} 返回的不是种子"
-            except Exception as exc:
-                last_error = str(exc)
-                continue
+                except P115Error as exc:
+                    last_error = str(exc)
+                    continue
+                except Exception as exc:
+                    last_error = str(exc)
+                    continue
+    if fake_count:
+        raise P115Error("公共缓存返回了假种子，未能获取与磁力匹配的文件列表。可整条推送，由 CD2/115 自行解析")
     raise P115Error(f"无法根据磁力获取种子文件: {last_error}")
 
 
