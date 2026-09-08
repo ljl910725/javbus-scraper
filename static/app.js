@@ -545,7 +545,7 @@ async function loadMovieDetail(code) {
   const res = await authFetch(`/api/movie/${encodeURIComponent(code)}?${params}`);
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || `HTTP ${res.status}`);
+    throw new Error(apiErrorMessage(err, `HTTP ${res.status}`));
   }
   return res.json();
 }
@@ -1407,9 +1407,22 @@ function renderErrors(errors) {
     return;
   }
   errorsEl.classList.remove("hidden");
+  const title = lastErrors.length === 1 ? "番号查询失败" : "部分番号查询失败";
   errorsEl.innerHTML = `
-    <h3>部分番号查询失败</h3>
+    <h3>${title}</h3>
     <ul>${lastErrors.map((e) => `<li><strong>${escapeHtml(e.code)}</strong>: ${escapeHtml(e.message)}</li>`).join("")}</ul>`;
+}
+
+function formatQueryErrors(errors) {
+  return (errors || [])
+    .map((e) => {
+      const code = String(e?.code || "").trim();
+      const message = String(e?.message || "").trim();
+      if (code && message) return `${code}: ${message}`;
+      return code || message;
+    })
+    .filter(Boolean)
+    .join("；");
 }
 
 function openAuthModal(mode) {
@@ -2077,7 +2090,11 @@ async function search() {
       const res = await authFetch(`/api/movie/${encodeURIComponent(codes[0])}?${params}`);
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+        const message = apiErrorMessage(err, `HTTP ${res.status}`);
+        renderErrors([{ code: codes[0], message }]);
+        clearSearchState();
+        setStatus(`查询失败: ${message}`);
+        return;
       }
       data = { results: [await res.json()], errors: [] };
     } else {
@@ -2087,16 +2104,18 @@ async function search() {
       });
       if (!res.ok) {
         const err = await res.json().catch(() => ({}));
-        throw new Error(err.detail || `HTTP ${res.status}`);
+        throw new Error(apiErrorMessage(err, `HTTP ${res.status}`));
       }
       data = await res.json();
     }
 
-    renderErrors(data.errors);
+    const failErrors = data.errors || [];
+    renderErrors(failErrors);
     const movies = data.results || [];
     if (!movies.length) {
       clearSearchState();
-      setStatus("全部查询失败");
+      const detail = formatQueryErrors(failErrors);
+      setStatus(detail ? `全部查询失败：${detail}` : "全部查询失败");
       return;
     }
     resetListViewState({
@@ -2106,8 +2125,13 @@ async function search() {
     });
     renderListResultsView();
     const ok = movies.length;
-    const fail = (data.errors || []).length;
-    setStatus(`完成：成功 ${ok} 个${fail ? `，失败 ${fail} 个` : ""}`);
+    const fail = failErrors.length;
+    if (fail) {
+      const detail = formatQueryErrors(failErrors);
+      setStatus(`完成：成功 ${ok} 个，失败 ${fail} 个${detail ? `（${detail}）` : ""}`);
+    } else {
+      setStatus(`完成：成功 ${ok} 个`);
+    }
   } catch (err) {
     setStatus(`查询失败: ${err.message}`);
   } finally {
@@ -2132,7 +2156,7 @@ async function searchFuzzy() {
     const res = await authFetch(`/api/search/fuzzy?${params}`);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.detail || `HTTP ${res.status}`);
+      throw new Error(apiErrorMessage(err, `HTTP ${res.status}`));
     }
     const data = await res.json();
     const results = data.results || [];
