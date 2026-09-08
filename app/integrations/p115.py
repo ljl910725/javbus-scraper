@@ -423,6 +423,37 @@ def _default_wanted(files: list[dict]) -> list[bool]:
     return flags
 
 
+def _magnet_parse_result(
+    link: str,
+    info_hash: str,
+    folder: dict,
+    *,
+    name: str,
+    files: list[dict],
+    selectable: bool,
+    message: str = "",
+) -> dict:
+    wanted_flags = _default_wanted(files) if selectable else [True] * len(files)
+    return {
+        "magnet": link,
+        "info_hash": info_hash,
+        "name": name,
+        "parsed": True,
+        "selectable": selectable,
+        "message": message,
+        **folder,
+        "files": [
+            {
+                "index": index,
+                "path": item["path"],
+                "size": int(item.get("size") or 0),
+                "wanted": wanted_flags[index] if index < len(wanted_flags) else True,
+            }
+            for index, item in enumerate(files)
+        ],
+    }
+
+
 async def _fetch_cached_torrent_bytes(info_hash: str) -> bytes:
     expected = (info_hash or "").strip().lower()
     if not expected:
@@ -509,42 +540,81 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
     if raw is None:
         from app.integrations.magnet_meta import (
             MagnetMetaError,
+            fetch_crawler_filelist,
             fetch_index_preview,
             fetch_magnet_info_bytes,
             wrap_info_as_torrent,
         )
 
-        info_res, preview_res = await asyncio.gather(
-            fetch_magnet_info_bytes(info_hash, link, timeout=16),
-            fetch_index_preview(link),
-            return_exceptions=True,
-        )
-        if isinstance(info_res, bytes):
-            raw = wrap_info_as_torrent(info_res)
-        elif isinstance(preview_res, dict) and preview_res:
-            count = int(preview_res.get("count") or 0)
-            name = preview_res["name"]
+        dht_task = asyncio.create_task(fetch_magnet_info_bytes(info_hash, link, timeout=16))
+        crawler_task = asyncio.create_task(fetch_crawler_filelist(info_hash))
+        preview_task = asyncio.create_task(fetch_index_preview(link))
+        pending = {dht_task, crawler_task, preview_task}
+        info_bytes = None
+        crawler = None
+        preview = None
+        dht_error: Exception | None = None
+        deadline = asyncio.get_running_loop().time() + 18
+        while pending:
+            timeout = max(0.05, deadline - asyncio.get_running_loop().time())
+            done, pending = await asyncio.wait(
+                pending,
+                timeout=timeout,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            if not done:
+                break
+            for task in done:
+                try:
+                    value = task.result()
+                except Exception as exc:
+                    if task is dht_task:
+                        dht_error = exc
+                    continue
+                if task is dht_task and isinstance(value, bytes):
+                    info_bytes = value
+                elif task is crawler_task and isinstance(value, dict) and value.get("files"):
+                    crawler = value
+                elif task is preview_task and isinstance(value, dict) and value:
+                    preview = value
+            if info_bytes or crawler:
+                for task in pending:
+                    task.cancel()
+                break
+        if pending:
+            for task in pending:
+                task.cancel()
+
+        if info_bytes:
+            raw = wrap_info_as_torrent(info_bytes)
+        elif crawler:
+            return _magnet_parse_result(
+                link,
+                info_hash,
+                folder,
+                name=crawler["name"],
+                files=crawler["files"],
+                selectable=True,
+                message="",
+            )
+        elif preview:
+            count = int(preview.get("count") or 0)
+            name = preview["name"]
             path = name if count <= 1 else f"{name}/（共 {count} 个文件）"
-            return {
-                "magnet": link,
-                "info_hash": info_hash,
-                "name": name,
-                "parsed": True,
-                "selectable": False,
-                "message": "已从磁力索引得到任务名；未能列出内部文件，确认后将整条推送",
-                **folder,
-                "files": [
-                    {
-                        "index": 0,
-                        "path": path,
-                        "size": int(preview_res.get("size") or 0),
-                        "wanted": True,
-                    }
-                ],
-            }
-        message = str(info_res) if isinstance(info_res, Exception) else "未能解析磁力"
-        if isinstance(info_res, MagnetMetaError):
-            message = str(info_res)
+            return _magnet_parse_result(
+                link,
+                info_hash,
+                folder,
+                name=name,
+                files=[{"path": path, "size": int(preview.get("size") or 0)}],
+                selectable=False,
+                message="已从磁力索引得到任务名；未能列出内部文件，确认后将整条推送",
+            )
+        message = "未能解析磁力"
+        if isinstance(dht_error, MagnetMetaError):
+            message = str(dht_error)
+        elif dht_error:
+            message = str(dht_error)
         return {
             "magnet": link,
             "info_hash": info_hash,
@@ -568,25 +638,15 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
             **folder,
             "files": [],
         }
-    wanted_flags = _default_wanted(files)
-    return {
-        "magnet": link,
-        "info_hash": info_hash,
-        "name": name,
-        "parsed": True,
-        "selectable": True,
-        "message": "",
-        **folder,
-        "files": [
-            {
-                "index": index,
-                "path": item["path"],
-                "size": int(item.get("size") or 0),
-                "wanted": wanted_flags[index],
-            }
-            for index, item in enumerate(files)
-        ],
-    }
+    return _magnet_parse_result(
+        link,
+        info_hash,
+        folder,
+        name=name,
+        files=files,
+        selectable=True,
+        message="",
+    )
 
 
 async def push_magnet_files(

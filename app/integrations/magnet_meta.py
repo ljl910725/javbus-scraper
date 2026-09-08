@@ -10,6 +10,7 @@ import asyncio
 import hashlib
 import os
 import random
+import re
 import socket
 import struct
 from urllib.parse import parse_qs, urlparse
@@ -476,3 +477,138 @@ async def fetch_index_preview(magnet: str) -> dict | None:
     if not name:
         return None
     return {"name": name, "size": size, "count": count}
+
+
+_BROWSER_HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+        "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8",
+}
+
+# DHT crawler sites used by Chinese magnet clients. They store the original
+# info.files list; this NAS often cannot complete BEP-9 over TCP/uTP.
+_BTMULU_URLS = (
+    "https://www.btmulu.live/hash/{hash}.html",
+    "https://btmulu.live/hash/{hash}.html",
+    "https://www.btmulu.cyou/hash/{hash}.html",
+    "https://www.btmulu.cfd/hash/{hash}.html",
+    "https://www.btmulu.help/hash/{hash}.html",
+)
+
+_SIZE_LINE_RE = re.compile(
+    r"^(?P<name>.+?)\s+(?P<num>\d+(?:\.\d+)?)\s*(?P<unit>[KMGT]?B)\s*$",
+    re.IGNORECASE,
+)
+_H1_RE = re.compile(r"<h1[^>]*>(.*?)</h1>", re.IGNORECASE | re.DOTALL)
+_FILE_PANEL_RE = re.compile(
+    r"<h3>\s*文件列表\s*</h3>.*?<div class=\"panel-body\">(.*?)</div>",
+    re.IGNORECASE | re.DOTALL,
+)
+_UNIT_BYTES = {
+    "B": 1,
+    "KB": 1024,
+    "MB": 1024 ** 2,
+    "GB": 1024 ** 3,
+    "TB": 1024 ** 4,
+}
+
+
+def _strip_html(text: str) -> str:
+    text = re.sub(r"<br\s*/?>", "\n", text, flags=re.IGNORECASE)
+    text = re.sub(r"<[^>]+>", " ", text)
+    return re.sub(r"[ \t]+", " ", text).strip()
+
+
+def _collapse_cjk_spaces(text: str) -> str:
+    return re.sub(r"(?<=[\u4e00-\u9fff])\s+(?=[\u4e00-\u9fff])", "", text)
+
+
+def _parse_size_token(num: str, unit: str) -> int:
+    try:
+        value = float(num)
+    except ValueError:
+        return 0
+    return int(value * _UNIT_BYTES.get(unit.upper(), 1))
+
+
+def parse_btmulu_html(html: str, info_hash: str) -> dict | None:
+    digest = (info_hash or "").strip().lower()
+    if not html or len(digest) != 40:
+        return None
+    if digest not in html.lower():
+        return None
+    panel = _FILE_PANEL_RE.search(html)
+    if not panel:
+        return None
+    files: list[dict] = []
+    for raw_line in _strip_html(panel.group(1)).splitlines():
+        line = _collapse_cjk_spaces(raw_line.strip())
+        if not line:
+            continue
+        match = _SIZE_LINE_RE.match(line)
+        if not match:
+            continue
+        name = _collapse_cjk_spaces(match.group("name")).strip()
+        size = _parse_size_token(match.group("num"), match.group("unit"))
+        if name:
+            files.append({"path": name, "size": size})
+    if not files:
+        return None
+    heading = _H1_RE.search(html)
+    title = _strip_html(heading.group(1)) if heading else ""
+    title = _collapse_cjk_spaces(title).strip()
+    if not title:
+        title = files[0]["path"]
+    if len(files) > 1:
+        files = [
+            {
+                "path": item["path"] if item["path"].startswith(f"{title}/") else f"{title}/{item['path']}",
+                "size": item["size"],
+            }
+            for item in files
+        ]
+    return {
+        "name": title,
+        "size": sum(item["size"] for item in files),
+        "count": len(files),
+        "files": files,
+    }
+
+
+async def fetch_crawler_filelist(info_hash: str) -> dict | None:
+    """File list from DHT crawler indexes (same data magnet search sites show)."""
+    digest = (info_hash or "").strip().lower()
+    if len(digest) != 40:
+        return None
+    result: dict = {"data": None}
+
+    async def one(url: str) -> None:
+        if result["data"]:
+            return
+        try:
+            async with httpx.AsyncClient(timeout=6.0, follow_redirects=True, headers=_BROWSER_HEADERS) as client:
+                response = await client.get(url)
+                if response.status_code != 200:
+                    return
+                parsed = parse_btmulu_html(response.text or "", digest)
+                if parsed:
+                    result["data"] = parsed
+        except Exception:
+            return
+
+    urls = [template.format(hash=digest) for template in _BTMULU_URLS]
+    tasks = [asyncio.create_task(one(url)) for url in urls]
+    pending = set(tasks)
+    while pending and not result["data"]:
+        done, pending = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+        for task in done:
+            try:
+                task.result()
+            except Exception:
+                pass
+    for task in pending:
+        task.cancel()
+    return result["data"]
