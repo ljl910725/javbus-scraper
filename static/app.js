@@ -1510,6 +1510,23 @@ async function loadConfig() {
   }
 }
 
+async function refreshPushReady() {
+  if (!isLoggedIn()) return;
+  try {
+    const pushRes = await authFetch("/api/push/status");
+    if (!pushRes.ok) return;
+    const push = await pushRes.json();
+    pushReady = Boolean(push.ready);
+    pushBackend = push.backend || pushBackend || "";
+    pushFolders = (push.push_folders || []).filter((folder) => folder.valid);
+    p115Ready = Boolean(push.p115_ready);
+    p115FolderCid = push.p115_folder_cid || "";
+    p115FolderPath = push.p115_folder_path || "";
+  } catch {
+    /* keep previous status */
+  }
+}
+
 async function pushToOffline({
   magnets = [],
   code = null,
@@ -1654,9 +1671,21 @@ function closeP115MagnetModal() {
   setP115MagnetStatus("");
 }
 
+function preferredPushBackend() {
+  if (pushBackend === "cd2" || pushBackend === "p115") return pushBackend;
+  if (p115Ready) return "p115";
+  return "cd2";
+}
+
 function magnetPushTarget(explicit) {
   if (explicit === "cd2" || explicit === "p115") return explicit;
-  return p115TabUsesCd2() ? "cd2" : "p115";
+  return preferredPushBackend();
+}
+
+function canPushTo(target) {
+  if (target === "p115") return Boolean(p115Ready);
+  if (target === "cd2") return pushBackend === "cd2" && Boolean(pushReady);
+  return false;
 }
 
 function magnetPushLabel(target) {
@@ -1674,18 +1703,6 @@ function magnetPushFolderText(target) {
 async function openP115MagnetModal({ magnet = "", code = "", button = null, target = "" } = {}) {
   const pushTarget = magnetPushTarget(target);
   const label = magnetPushLabel(pushTarget);
-  if (pushTarget === "p115" && !p115Ready) {
-    const message = "115 未就绪，请先在配置页填写 Cookie 并保存目录";
-    setP115PasteStatus(message, true);
-    setStatus(message);
-    return;
-  }
-  if (pushTarget === "cd2" && !pushReady) {
-    const message = "CD2 未就绪，请先在配置页填写 API 令牌并添加推送目录";
-    setP115PasteStatus(message, true);
-    setStatus(message);
-    return;
-  }
   if (!magnet && code) {
     magnet = await ensureItemMagnet(code);
   }
@@ -1739,6 +1756,13 @@ async function confirmP115MagnetPush() {
   const wanted = parsed.selectable === false ? [] : selectedP115Indexes();
   if (pushTarget === "p115" && parsed.parsed && parsed.selectable !== false && parsed.files?.length && !wanted.length) {
     setP115MagnetStatus("请至少选择一个文件", true);
+    return;
+  }
+  await refreshPushReady();
+  if (!canPushTo(pushTarget)) {
+    const message = p115TabUnreadyMessage();
+    setP115MagnetStatus(message, true);
+    setP115PasteStatus(message, true);
     return;
   }
   p115MagnetConfirmBtn.disabled = true;
@@ -1836,24 +1860,17 @@ function setP115PasteStatus(message, isError = false, loading = false) {
 }
 
 function p115TabUsesCd2() {
-  return pushBackend === "cd2" && Boolean(pushReady);
+  return preferredPushBackend() === "cd2";
 }
 
 function p115TabReady() {
-  return p115TabUsesCd2() || Boolean(p115Ready);
+  return canPushTo(preferredPushBackend());
 }
 
-async function ensureP115ParseReady() {
-  if (!isLoggedIn()) {
-    setP115PasteStatus("解析链接需要先登录", true);
-    openAuthModal("login");
-    return false;
-  }
-  if (p115TabReady()) return true;
-  setP115PasteStatus(
-    "解析后推送需要 CD2 令牌或 115 Cookie。请先到配置页填写；若只想整条添加任务，也可以先配好再点「全部整条推送」。",
-    true
-  );
+async function ensureLoggedInForParse() {
+  if (isLoggedIn()) return true;
+  setP115PasteStatus("解析链接需要先登录", true);
+  openAuthModal("login");
   return false;
 }
 
@@ -1886,6 +1903,7 @@ async function ensureP115TabReady() {
     openAuthModal("login");
     return false;
   }
+  await refreshPushReady();
   if (p115TabReady()) return true;
   setP115PasteStatus(p115TabUnreadyMessage(), true);
   return false;
@@ -1934,7 +1952,7 @@ function currentP115MagnetLinks() {
 }
 
 async function parsePastedP115Magnet(link) {
-  if (!(await ensureP115ParseReady())) return;
+  if (!(await ensureLoggedInForParse())) return;
   const magnet = (link || "").trim();
   if (!magnet) {
     setP115PasteStatus("请先粘贴 magnet 或 ed2k 链接", true);
@@ -1956,7 +1974,7 @@ async function parsePastedP115Magnet(link) {
     return;
   }
   if (p115MagnetModal?.classList.contains("hidden")) {
-    setP115PasteStatus(`未能打开解析窗口，请检查 ${label} 是否已配置`, true);
+    setP115PasteStatus("解析窗口未打开，请再试一次", true);
     return;
   }
   setP115PasteStatus(
