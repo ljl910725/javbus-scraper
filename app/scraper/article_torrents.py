@@ -65,11 +65,32 @@ def _item_to_magnet(item: dict) -> MagnetLink | None:
     )
 
 
-async def fetch_article_torrents(keyword: str) -> list[MagnetLink]:
+def _http_error_text(exc: Exception) -> str:
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        status = exc.response.status_code
+        body = ""
+        try:
+            payload = exc.response.json()
+            if isinstance(payload, dict):
+                body = str(payload.get("message") or payload.get("msg") or payload.get("detail") or "").strip()
+            elif isinstance(payload, str):
+                body = payload.strip()
+        except Exception:
+            body = (exc.response.text or "").strip()
+        body = re.sub(r"\s+", " ", body)[:200]
+        return f"HTTP {status}" + (f"：{body}" if body else "")
+    if isinstance(exc, httpx.TimeoutException):
+        return "请求超时"
+    return str(exc) or type(exc).__name__
+
+
+async def fetch_article_torrents_with_status(keyword: str) -> tuple[list[MagnetLink], str | None]:
     url = (settings.torrents_api_url or "").strip()
     api_key = (settings.torrents_api_key or "").strip()
-    if not url or not api_key or not keyword:
-        return []
+    if not url or not api_key:
+        return [], "未配置磁力接口地址或密钥"
+    if not keyword:
+        return [], "关键词为空"
 
     try:
         async with httpx.AsyncClient(timeout=settings.request_timeout, follow_redirects=True) as client:
@@ -80,15 +101,19 @@ async def fetch_article_torrents(keyword: str) -> list[MagnetLink]:
             )
             response.raise_for_status()
             payload = response.json()
-    except Exception:
-        return []
+    except Exception as exc:
+        return [], _http_error_text(exc)
 
-    if not isinstance(payload, dict) or payload.get("code") not in {0, "0", None}:
-        return []
+    if not isinstance(payload, dict):
+        return [], "返回格式无效"
+    code = payload.get("code")
+    if code not in {0, "0", None}:
+        api_msg = str(payload.get("message") or payload.get("msg") or payload.get("error") or "").strip()
+        return [], api_msg or f"接口返回 code={code}"
 
     items = payload.get("data") or []
     if not isinstance(items, list):
-        return []
+        return [], "返回 data 不是列表"
 
     magnets: list[MagnetLink] = []
     seen: set[str] = set()
@@ -100,7 +125,14 @@ async def fetch_article_torrents(keyword: str) -> list[MagnetLink]:
             continue
         seen.add(magnet.link)
         magnets.append(magnet)
-    return sort_magnets(magnets)
+    if not magnets:
+        return [], f"未找到「{keyword}」的匹配磁力"
+    return sort_magnets(magnets), None
+
+
+async def fetch_article_torrents(keyword: str) -> list[MagnetLink]:
+    magnets, _error = await fetch_article_torrents_with_status(keyword)
+    return magnets
 
 
 def quality_flags_from_magnets(magnets: list[MagnetLink]) -> dict[str, bool]:

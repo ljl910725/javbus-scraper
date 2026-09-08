@@ -1399,6 +1399,13 @@ function renderMeta(label, value) {
   return `<div><dt>${label}</dt><dd>${escapeHtml(value)}</dd></div>`;
 }
 
+function splitSourceErrors(message) {
+  return String(message || "")
+    .split("；")
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
 function renderErrors(errors) {
   lastErrors = errors || [];
   if (!lastErrors.length) {
@@ -1410,7 +1417,16 @@ function renderErrors(errors) {
   const title = lastErrors.length === 1 ? "番号查询失败" : "部分番号查询失败";
   errorsEl.innerHTML = `
     <h3>${title}</h3>
-    <ul>${lastErrors.map((e) => `<li><strong>${escapeHtml(e.code)}</strong>: ${escapeHtml(e.message)}</li>`).join("")}</ul>`;
+    <ul>${lastErrors
+      .map((e) => {
+        const sources = splitSourceErrors(e.message);
+        const detail =
+          sources.length > 1
+            ? `<ul class="error-sources">${sources.map((item) => `<li>${escapeHtml(item)}</li>`).join("")}</ul>`
+            : `: ${escapeHtml(e.message || "")}`;
+        return `<li><strong>${escapeHtml(e.code)}</strong>${detail}</li>`;
+      })
+      .join("")}</ul>`;
 }
 
 function formatQueryErrors(errors) {

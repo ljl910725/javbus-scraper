@@ -9,7 +9,7 @@ from app.config import settings
 from app.models import MovieInfo
 from app.scraper.article_torrents import (
     fetch_article_quality_map,
-    fetch_article_torrents,
+    fetch_article_torrents_with_status,
     magnets_matching_code,
     merge_quality_flags,
     quality_flags_from_magnets,
@@ -33,6 +33,23 @@ from app.scraper.parser import (
 
 class ScrapeError(Exception):
     pass
+
+
+def _source_error_text(exc: Exception) -> str:
+    if isinstance(exc, ScrapeError):
+        text = str(exc).strip()
+        return text or "未知错误"
+    if isinstance(exc, httpx.HTTPStatusError) and exc.response is not None:
+        return f"HTTP {exc.response.status_code}"
+    if isinstance(exc, (httpx.TimeoutException, TimeoutError)):
+        return "请求超时"
+    if isinstance(exc, httpx.ConnectError):
+        return f"连接失败: {exc}"
+    return str(exc).strip() or type(exc).__name__
+
+
+def _combine_source_errors(*parts: str) -> str:
+    return "；".join(item for item in parts if item)
 
 
 def _is_not_found(exc: Exception) -> bool:
@@ -204,17 +221,26 @@ async def scrape_movie(
         raise ScrapeError("番号不能为空")
 
     http_client = client or get_client(user_settings)
-    javbus_result, extra_magnets = await asyncio.gather(
+    javbus_result, torrents_result = await asyncio.gather(
         _scrape_javbus_movie(
             normalized,
             download_cover=download_cover,
             client=http_client,
         ),
-        fetch_article_torrents(normalized),
+        fetch_article_torrents_with_status(normalized),
         return_exceptions=True,
     )
 
-    torrents = extra_magnets if isinstance(extra_magnets, list) else []
+    torrents: list = []
+    torrents_error = ""
+    if isinstance(torrents_result, Exception):
+        torrents_error = f"磁力接口：{_source_error_text(torrents_result)}"
+    else:
+        torrents, status_error = torrents_result
+        if status_error:
+            torrents_error = f"磁力接口：{status_error}"
+        elif not torrents:
+            torrents_error = "磁力接口：未找到匹配磁力"
 
     if isinstance(javbus_result, MovieInfo):
         javbus_result.magnets = merge_magnets(javbus_result.magnets, torrents)
@@ -227,9 +253,12 @@ async def scrape_movie(
             magnets=sort_magnets(torrents),
         )
 
-    if isinstance(javbus_result, Exception):
-        raise javbus_result
-    raise ScrapeError(f"未找到番号 {code} 的匹配结果")
+    javbus_error = (
+        f"JavBus：{_source_error_text(javbus_result)}"
+        if isinstance(javbus_result, Exception)
+        else f"JavBus：未找到番号 {normalized} 的匹配结果"
+    )
+    raise ScrapeError(_combine_source_errors(javbus_error, torrents_error))
 
 
 async def scrape_movies_batch(
@@ -277,12 +306,21 @@ async def fuzzy_search_movies(
 
     client = get_client(user_settings)
     search_url = build_fuzzy_search_url(keywords)
-    html_or_err, magnets_or_err = await asyncio.gather(
+    html_or_err, torrents_result = await asyncio.gather(
         client.get_text(search_url),
-        fetch_article_torrents(keywords),
+        fetch_article_torrents_with_status(keywords),
         return_exceptions=True,
     )
-    query_magnets = magnets_or_err if isinstance(magnets_or_err, list) else []
+    query_magnets = []
+    torrents_error = ""
+    if isinstance(torrents_result, Exception):
+        torrents_error = f"磁力接口：{_source_error_text(torrents_result)}"
+    else:
+        query_magnets, status_error = torrents_result
+        if status_error:
+            torrents_error = f"磁力接口：{status_error}"
+        elif not query_magnets:
+            torrents_error = "磁力接口：未找到匹配磁力"
     html = html_or_err if isinstance(html_or_err, str) else ""
     previews = parse_fuzzy_search_page(html, source_url=search_url) if html else []
     query_code = normalize_code(keywords) or keywords.strip().upper()
@@ -303,9 +341,12 @@ async def fuzzy_search_movies(
                     "has_subtitle": bool(query_flags.get("has_subtitle")),
                 }
             ]
-        if isinstance(html_or_err, Exception):
-            raise ScrapeError(f"搜索失败: {html_or_err}") from html_or_err
-        raise ScrapeError(f"未找到与「{keywords}」相关的影片")
+        javbus_error = (
+            f"JavBus：{_source_error_text(html_or_err)}"
+            if isinstance(html_or_err, Exception)
+            else f"JavBus：未找到与「{keywords}」相关的影片"
+        )
+        raise ScrapeError(_combine_source_errors(javbus_error, torrents_error))
 
     quality_map = await fetch_article_quality_map([item.code for item in previews])
     results = []
