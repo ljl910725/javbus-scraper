@@ -1,4 +1,5 @@
 import re
+from urllib.parse import unquote
 
 from bs4 import BeautifulSoup
 
@@ -8,6 +9,10 @@ from app.scraper.client import JavBusClient
 
 _SIZE_UNITS = {"KB": 1024, "MB": 1024**2, "GB": 1024**3, "TB": 1024**4}
 _INFOHASH_RE = re.compile(r"btih:([a-zA-Z0-9]+)", re.IGNORECASE)
+_ED2K_RE = re.compile(
+    r"ed2k://\|file\|(?P<name>[^|]+)\|(?P<size>\d+)\|(?P<hash>[0-9A-Fa-f]{32})\|",
+    re.IGNORECASE,
+)
 _ERROR_10004_RE = re.compile(r"(?<!\d)10004(?!\d)")
 _AMP_TOKEN = "amp;"
 _UHD_RE = re.compile(r"超清|4k|uhd|2160p", re.IGNORECASE)
@@ -22,6 +27,37 @@ def magnet_infohash(link: str) -> str:
 
 def clean_magnet_link(link: str) -> str:
     return (link or "").replace(_AMP_TOKEN, "")
+
+
+def is_magnet_link(link: str) -> bool:
+    return (link or "").strip().lower().startswith("magnet:")
+
+
+def is_ed2k_link(link: str) -> bool:
+    return (link or "").strip().lower().startswith("ed2k://")
+
+
+def is_offline_link(link: str) -> bool:
+    return is_magnet_link(link) or is_ed2k_link(link)
+
+
+def parse_ed2k_link(link: str) -> dict | None:
+    match = _ED2K_RE.search((link or "").strip())
+    if not match:
+        return None
+    name = unquote(match.group("name")).strip() or "ed2k"
+    try:
+        size = int(match.group("size"))
+    except ValueError:
+        return None
+    if size < 0:
+        return None
+    return {
+        "link": (link or "").strip(),
+        "name": name,
+        "size": size,
+        "hash": match.group("hash").upper(),
+    }
 
 
 def magnet_needs_amp_retry(link: str) -> bool:

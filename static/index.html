@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=26090805" />
+  <link rel="stylesheet" href="/static/style.css?v=26090806" />
 </head>
 <body class="app-root">
   <div class="container">
@@ -232,11 +232,11 @@
 
     <div id="tabP115" class="tab-panel hidden" data-tab-panel="p115">
     <section class="dup-panel">
-      <p class="field-hint">把磁力链接粘贴到下面。「解析磁力」会先列出种子文件：配了 115 Cookie 时可勾选后再推送；配了 CD2 令牌时确认后整条推送到 CD2。支持从整段文本里自动提取 magnet 链接。</p>
-      <label for="p115MagnetInput">磁力链接</label>
-      <textarea id="p115MagnetInput" rows="6" placeholder="magnet:?xt=urn:btih:xxxxxxxx&#10;也可直接粘贴网页或论坛里带磁链的整段文字"></textarea>
+      <p class="field-hint">把 magnet 或 ed2k 链接粘贴到下面。「解析链接」会先列出文件：配了 115 Cookie 时磁力可勾选后再推送；ed2k 和 CD2 都是确认后整条推送。支持从整段文本里自动提取链接。</p>
+      <label for="p115MagnetInput">离线链接</label>
+      <textarea id="p115MagnetInput" rows="6" placeholder="magnet:?xt=urn:btih:xxxxxxxx&#10;ed2k://|file|文件名.mp4|大小|哈希|/&#10;也可直接粘贴网页或论坛里带链接的整段文字"></textarea>
       <div class="options">
-        <button id="p115ParseBtn" type="button">解析磁力</button>
+        <button id="p115ParseBtn" type="button">解析链接</button>
         <button id="p115PushAllBtn" class="ghost-btn" type="button">全部整条推送</button>
       </div>
       <div id="p115PasteStatus" class="status hidden"></div>
@@ -404,7 +404,7 @@
   <div id="p115MagnetModal" class="modal hidden">
     <div class="modal-card p115-magnet-modal-card">
       <div class="modal-header">
-        <h2 id="p115MagnetModalTitle">解析磁力</h2>
+        <h2 id="p115MagnetModalTitle">解析链接</h2>
         <button id="closeP115MagnetModalBtn" class="ghost-btn" type="button">关闭</button>
       </div>
       <p id="p115MagnetHint" class="field-hint"></p>
@@ -433,11 +433,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26090805"></script>
-  <script src="/static/nav.js?v=26090805"></script>
-  <script src="/static/app.js?v=26090805"></script>
-  <script src="/static/duplicates.js?v=26090805"></script>
-  <script src="/static/nosub.js?v=26090805"></script>
-  <script src="/static/cleanup.js?v=26090805"></script>
+  <script src="/static/auth.js?v=26090806"></script>
+  <script src="/static/nav.js?v=26090806"></script>
+  <script src="/static/app.js?v=26090806"></script>
+  <script src="/static/duplicates.js?v=26090806"></script>
+  <script src="/static/nosub.js?v=26090806"></script>
+  <script src="/static/cleanup.js?v=26090806"></script>
 </body>
 </html>

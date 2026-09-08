@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from clouddrive2_client import CloudDriveClient
 from clouddrive2_client.proto import clouddrive_pb2
 
-from app.scraper.magnets import clean_magnet_link, is_error_10004, magnet_needs_amp_retry
+from app.scraper.magnets import clean_magnet_link, is_error_10004, is_offline_link, magnet_needs_amp_retry
 from app.user_settings import merge_settings, normalize_push_folders
 
 
@@ -270,8 +270,8 @@ def _push_magnet_sync(
     user_settings: dict | None = None,
     folder_id: str | None = None,
 ) -> CD2PushResult:
-    if not link.startswith("magnet:"):
-        raise CD2Error("仅支持 magnet 链接")
+    if not is_offline_link(link):
+        raise CD2Error("仅支持 magnet / ed2k 链接")
 
     cfg = _cfg(user_settings)
     target_folder, folder = resolve_push_folder(cfg, folder_id)

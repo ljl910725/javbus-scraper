@@ -1694,16 +1694,16 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null, targ
     return;
   }
   pendingP115Magnet = { magnet, code, button, parsed: null, target: pushTarget };
-  if (p115MagnetModalTitle) p115MagnetModalTitle.textContent = `解析磁力并推送到 ${label}`;
+  if (p115MagnetModalTitle) p115MagnetModalTitle.textContent = `解析链接并推送到 ${label}`;
   if (p115MagnetConfirmBtn) p115MagnetConfirmBtn.textContent = `推送到 ${label}`;
   p115MagnetToolbar?.classList.toggle("hidden", pushTarget === "cd2");
   bringModalToFront(p115MagnetModal);
   p115MagnetModal.classList.remove("hidden");
   const folderText = magnetPushFolderText(pushTarget);
   p115MagnetHint.textContent = folderText;
-  p115MagnetFiles.innerHTML = '<p class="folder-empty">正在解析磁力文件列表...</p>';
+  p115MagnetFiles.innerHTML = '<p class="folder-empty">正在解析文件列表...</p>';
   p115MagnetConfirmBtn.disabled = true;
-  setP115MagnetStatus("正在解析磁力，请稍候...");
+  setP115MagnetStatus("正在解析链接，请稍候...");
   try {
     const res = await authFetch("/api/p115/magnet/parse", {
       method: "POST",
@@ -1825,7 +1825,7 @@ const p115ParseBtn = document.getElementById("p115ParseBtn");
 const p115PushAllBtn = document.getElementById("p115PushAllBtn");
 const p115PasteStatus = document.getElementById("p115PasteStatus");
 const p115PasteList = document.getElementById("p115PasteList");
-const MAGNET_LINK_RE = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*/gi;
+const OFFLINE_LINK_RE = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*|ed2k:\/\/\|file\|[^\s"'<>]+/gi;
 
 function setP115PasteStatus(message, isError = false, loading = false) {
   if (!p115PasteStatus) return;
@@ -1845,7 +1845,7 @@ function p115TabReady() {
 
 async function ensureP115ParseReady() {
   if (!isLoggedIn()) {
-    setP115PasteStatus("解析磁力需要先登录", true);
+    setP115PasteStatus("解析链接需要先登录", true);
     openAuthModal("login");
     return false;
   }
@@ -1892,15 +1892,19 @@ async function ensureP115TabReady() {
 }
 
 function extractMagnetLinks(text) {
-  const matches = String(text || "").match(MAGNET_LINK_RE) || [];
+  const source = String(text || "");
   const seen = new Set();
   const links = [];
-  for (const raw of matches) {
-    const link = raw.replace(/[.,;]+$/, "");
+  const matcher = new RegExp(OFFLINE_LINK_RE.source, "gi");
+  let match = matcher.exec(source);
+  while (match) {
+    const link = match[0].replace(/[.,;]+$/, "");
     const key = link.toLowerCase();
-    if (seen.has(key)) continue;
-    seen.add(key);
-    links.push(link);
+    if (!seen.has(key)) {
+      seen.add(key);
+      links.push(link);
+    }
+    match = matcher.exec(source);
   }
   return links;
 }
@@ -1933,12 +1937,12 @@ async function parsePastedP115Magnet(link) {
   if (!(await ensureP115ParseReady())) return;
   const magnet = (link || "").trim();
   if (!magnet) {
-    setP115PasteStatus("请先粘贴磁力链接", true);
+    setP115PasteStatus("请先粘贴 magnet 或 ed2k 链接", true);
     return;
   }
   const target = magnetPushTarget();
   const label = magnetPushLabel(target);
-  setP115PasteStatus("正在解析磁力文件列表...", false, true);
+  setP115PasteStatus("正在解析文件列表...", false, true);
   await openP115MagnetModal({ magnet, target });
   const parsed = pendingP115Magnet?.parsed;
   if (parsed?.parsed) {
@@ -1966,7 +1970,7 @@ async function pushPastedMagnetsWithCurrentBackend(links, button) {
   const folder = currentOfflineFolderHint();
   const ok = await showAppConfirm({
     title: `推送到 ${label}`,
-    message: `确定把 ${links.length} 条磁力整条推送到 ${label}${folder ? `\n${folder}` : ""}？\n${p115TabUsesCd2() ? "CD2 会下整条任务，不能勾选单文件。" : "不会弹出选文件，整条任务都会下。"}`,
+    message: `确定把 ${links.length} 条链接整条推送到 ${label}${folder ? `\n${folder}` : ""}？\n${p115TabUsesCd2() ? "CD2 会下整条任务，不能勾选单文件。" : "不会弹出选文件，整条任务都会下。"}`,
     confirmText: "推送",
   });
   if (!ok) return false;
@@ -2012,11 +2016,11 @@ p115ParseBtn?.addEventListener("click", async () => {
   const links = currentP115MagnetLinks();
   renderP115PasteList(links);
   if (!links.length) {
-    setP115PasteStatus("没有识别到 magnet 链接，请确认以 magnet:?xt=urn:btih: 开头", true);
+    setP115PasteStatus("没有识别到 magnet 或 ed2k 链接", true);
     return;
   }
   if (links.length > 1) {
-    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先解析第 1 条。也可点下面单独解析，或用「全部整条推送」。`);
+    setP115PasteStatus(`识别到 ${links.length} 条链接，将先解析第 1 条。也可点下面单独解析，或用「全部整条推送」。`);
   }
   p115ParseBtn.disabled = true;
   try {
@@ -2030,7 +2034,7 @@ p115PushAllBtn?.addEventListener("click", async () => {
   const links = currentP115MagnetLinks();
   renderP115PasteList(links);
   if (!links.length) {
-    setP115PasteStatus("没有识别到 magnet 链接", true);
+    setP115PasteStatus("没有识别到 magnet 或 ed2k 链接", true);
     return;
   }
   if (!(await ensureP115TabReady())) return;
@@ -2047,7 +2051,7 @@ p115MagnetInput?.addEventListener("input", () => {
   const links = currentP115MagnetLinks();
   renderP115PasteList(links);
   if (links.length) {
-    setP115PasteStatus(`已识别 ${links.length} 条磁力链接`);
+    setP115PasteStatus(`已识别 ${links.length} 条链接`);
   }
 });
 

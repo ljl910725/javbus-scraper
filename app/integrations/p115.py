@@ -10,7 +10,15 @@ from pathlib import Path
 import httpx
 
 from app.config import settings as app_settings
-from app.scraper.magnets import clean_magnet_link, is_error_10004, magnet_needs_amp_retry
+from app.scraper.magnets import (
+    clean_magnet_link,
+    is_ed2k_link,
+    is_error_10004,
+    is_magnet_link,
+    is_offline_link,
+    magnet_needs_amp_retry,
+    parse_ed2k_link,
+)
 from app.user_settings import effective_proxies, merge_settings
 
 P115_HEADERS = {
@@ -169,8 +177,8 @@ def _p115_fail_message(data: dict, fallback: str = "推送失败") -> str:
 
 
 async def push_magnet(link: str, user_settings: dict | None = None) -> P115PushResult:
-    if not link.startswith("magnet:"):
-        raise P115Error("仅支持 magnet 链接")
+    if not is_offline_link(link):
+        raise P115Error("仅支持 magnet / ed2k 链接")
 
     async with _build_client(user_settings) as client:
         cfg = _cfg(user_settings)
@@ -525,8 +533,35 @@ async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
 
 
 async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
-    if not (link or "").startswith("magnet:"):
-        raise P115Error("仅支持 magnet 链接")
+    if is_ed2k_link(link):
+        ed2k = parse_ed2k_link(link)
+        cfg = _cfg(user_settings)
+        folder = {
+            "folder_cid": _folder_cid(user_settings),
+            "folder_path": cfg.get("p115_folder_path") or "",
+        }
+        if not ed2k:
+            return {
+                "magnet": (link or "").strip(),
+                "info_hash": "",
+                "name": "",
+                "parsed": False,
+                "selectable": False,
+                "message": "无法解析 ed2k 链接，请确认格式为 ed2k://|file|文件名|大小|哈希|/",
+                **folder,
+                "files": [],
+            }
+        return _magnet_parse_result(
+            ed2k["link"],
+            ed2k["hash"].lower(),
+            folder,
+            name=ed2k["name"],
+            files=[{"path": ed2k["name"], "size": ed2k["size"]}],
+            selectable=False,
+            message="ed2k 为单文件，确认后将整条推送",
+        )
+    if not is_magnet_link(link):
+        raise P115Error("仅支持 magnet / ed2k 链接")
     info_hash = extract_infohash(link)
     cfg = _cfg(user_settings)
     folder = {
@@ -656,8 +691,10 @@ async def push_magnet_files(
     wanted: list[int] | None = None,
     user_settings: dict | None = None,
 ) -> P115PushResult:
-    if not (link or "").startswith("magnet:"):
-        raise P115Error("仅支持 magnet 链接")
+    if not is_offline_link(link):
+        raise P115Error("仅支持 magnet / ed2k 链接")
+    if is_ed2k_link(link):
+        return await push_magnet(link, user_settings)
     digest = (info_hash or extract_infohash(link)).lower()
     selected = sorted({int(index) for index in (wanted or []) if int(index) >= 0})
     cfg = _cfg(user_settings)
