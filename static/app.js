@@ -1658,7 +1658,7 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null } = {
       body: JSON.stringify({ magnet }),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "解析失败");
+    if (!res.ok) throw new Error(apiErrorMessage(data, "解析失败"));
     pendingP115Magnet.parsed = data;
     renderP115MagnetFiles(data);
     const extra = data.parsed
@@ -1768,6 +1768,20 @@ function p115TabReady() {
   return p115TabUsesCd2() || Boolean(p115Ready);
 }
 
+async function ensureP115ParseReady() {
+  if (!isLoggedIn()) {
+    setP115PasteStatus("解析磁力需要先登录", true);
+    openAuthModal("login");
+    return false;
+  }
+  if (p115Ready) return true;
+  setP115PasteStatus(
+    "解析磁力需要 115 Cookie。请先到配置页填写 Cookie 并保存目录；若只想整条添加任务，请用「全部整条推送」。",
+    true
+  );
+  return false;
+}
+
 function p115TabUnreadyMessage() {
   if (pushBackend === "cd2") {
     return "CD2 未就绪，请先在配置页填写 API 令牌，并添加可用的推送目录";
@@ -1841,19 +1855,30 @@ function currentP115MagnetLinks() {
 }
 
 async function parsePastedP115Magnet(link) {
-  if (!(await ensureP115TabReady())) return;
+  if (!(await ensureP115ParseReady())) return;
   const magnet = (link || "").trim();
   if (!magnet) {
     setP115PasteStatus("请先粘贴磁力链接", true);
     return;
   }
-  if (p115TabUsesCd2()) {
-    await pushPastedMagnetsWithCurrentBackend([magnet], p115ParseBtn);
+  setP115PasteStatus("正在解析磁力文件列表...", false, true);
+  await openP115MagnetModal({ magnet });
+  const parsed = pendingP115Magnet?.parsed;
+  if (parsed?.parsed) {
+    const count = parsed.files?.length || 0;
+    setP115PasteStatus(
+      `已解析 ${count} 个文件${p115FolderPath ? `，确认后推送到 ${p115FolderPath}` : "，勾选文件后确认推送"}`
+    );
     return;
   }
-  setP115PasteStatus("正在打开解析窗口...", false, true);
-  await openP115MagnetModal({ magnet });
-  setP115PasteStatus(p115FolderPath ? `将推送到 ${p115FolderPath}` : "解析窗口已打开，确认后会推送到 115");
+  if (p115MagnetModal?.classList.contains("hidden")) {
+    setP115PasteStatus("未能打开解析窗口，请检查 115 Cookie", true);
+    return;
+  }
+  setP115PasteStatus(
+    parsed?.message || "未能列出文件，可在弹窗里确认后整条推送，或检查磁力是否有效",
+    true
+  );
 }
 
 async function pushPastedMagnetsWithCurrentBackend(links, button) {
@@ -1911,9 +1936,14 @@ p115ParseBtn?.addEventListener("click", async () => {
     return;
   }
   if (links.length > 1) {
-    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先处理第 1 条。也可点下面单独处理，或用「全部整条推送」。`);
+    setP115PasteStatus(`识别到 ${links.length} 条磁力，将先解析第 1 条。也可点下面单独解析，或用「全部整条推送」。`);
   }
-  await parsePastedP115Magnet(links[0]);
+  p115ParseBtn.disabled = true;
+  try {
+    await parsePastedP115Magnet(links[0]);
+  } finally {
+    p115ParseBtn.disabled = false;
+  }
 });
 
 p115PushAllBtn?.addEventListener("click", async () => {
