@@ -833,6 +833,12 @@ button:disabled {
   padding-left: 1.25rem;
 }
 
+.errors li {
+  margin: 0.35rem 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
 .results {
   margin-top: 1.5rem;
   display: flex;
@@ -2463,11 +2469,53 @@ button:disabled {
   margin-top: 0.85rem;
 }
 
+#p115PasteErrors {
+  margin-top: 0.85rem;
+}
+
 .p115-paste-list .dup-file-name {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 0.5rem;
+}
+
+.p115-paste-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-shrink: 0;
+}
+
+.p115-paste-badge {
+  font-size: 0.72rem;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+}
+
+.p115-paste-badge.is-ok {
+  color: var(--success);
+}
+
+.p115-paste-badge.is-fail {
+  color: var(--danger);
+}
+
+.p115-paste-list .dup-file.is-fail {
+  border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+}
+
+.p115-paste-list .dup-file.is-ok {
+  border-color: color-mix(in srgb, var(--success) 32%, var(--border));
+}
+
+.p115-paste-reason {
+  margin-top: 0.4rem;
+  color: var(--danger);
+  font-size: 0.82rem;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
 }
 
 .toast-stack {

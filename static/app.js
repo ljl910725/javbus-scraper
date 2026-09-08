@@ -1408,11 +1408,14 @@ function splitSourceErrors(message) {
 
 function renderErrors(errors) {
   lastErrors = errors || [];
+  if (!errorsEl) return;
   if (!lastErrors.length) {
     errorsEl.classList.add("hidden");
     errorsEl.innerHTML = "";
+    delete errorsEl.dataset.kind;
     return;
   }
+  errorsEl.dataset.kind = "query";
   errorsEl.classList.remove("hidden");
   const title = lastErrors.length === 1 ? "番号查询失败" : "部分番号查询失败";
   errorsEl.innerHTML = `
@@ -1527,6 +1530,170 @@ async function refreshPushReady() {
   }
 }
 
+function shortOfflineLink(link) {
+  const text = String(link || "").trim();
+  const ed2k = text.match(/^ed2k:\/\/\|file\|([^|]+)\|/i);
+  if (ed2k) {
+    try {
+      return decodeURIComponent(ed2k[1]);
+    } catch {
+      return ed2k[1];
+    }
+  }
+  const hash = text.match(/xt=urn:btih:([a-zA-Z0-9]+)/i);
+  if (hash) {
+    const value = hash[1].toUpperCase();
+    return value.length > 16 ? `${value.slice(0, 16)}...` : value;
+  }
+  return text.length > 72 ? `${text.slice(0, 72)}...` : text;
+}
+
+function pushItemLabel(row) {
+  const n = Number.isInteger(row?.index) ? `第 ${row.index + 1} 条` : "链接";
+  const name = String(row?.task_name || "").trim() || shortOfflineLink(row?.link);
+  return name ? `${n}（${name}）` : n;
+}
+
+function alignPushResults(links, results) {
+  const rows = Array.isArray(results) ? results : [];
+  const sourceLinks = Array.isArray(links) && links.length ? links : rows.map((row) => row.link || "");
+  if (rows.length === sourceLinks.length) {
+    return sourceLinks.map((link, index) => ({
+      link,
+      index,
+      success: Boolean(rows[index]?.success),
+      message: rows[index]?.message || (rows[index]?.success ? "推送成功" : "推送失败"),
+      task_name: rows[index]?.task_name || "",
+    }));
+  }
+  const used = new Set();
+  return sourceLinks.map((link, index) => {
+    const key = String(link || "").toLowerCase();
+    const found = rows.findIndex(
+      (row, i) => !used.has(i) && String(row.link || "").toLowerCase() === key
+    );
+    if (found >= 0) {
+      used.add(found);
+      const row = rows[found];
+      return {
+        link,
+        index,
+        success: Boolean(row.success),
+        message: row.message || (row.success ? "推送成功" : "推送失败"),
+        task_name: row.task_name || "",
+      };
+    }
+    return {
+      link,
+      index,
+      success: false,
+      message: "没有返回这条的推送结果",
+      task_name: "",
+    };
+  });
+}
+
+function renderFailureListHtml(failed) {
+  return failed
+    .map(
+      (row) =>
+        `<li><strong>${escapeHtml(pushItemLabel(row))}</strong>：${escapeHtml(row.message || "未知错误")}</li>`
+    )
+    .join("");
+}
+
+function clearPushErrorPanel() {
+  if (errorsEl?.dataset.kind === "push") {
+    errorsEl.classList.add("hidden");
+    errorsEl.innerHTML = "";
+    delete errorsEl.dataset.kind;
+  }
+}
+
+function renderPushErrorPanel(failed) {
+  if (!errorsEl) return;
+  if (!failed.length) {
+    clearPushErrorPanel();
+    return;
+  }
+  errorsEl.dataset.kind = "push";
+  errorsEl.classList.remove("hidden");
+  errorsEl.innerHTML = `
+    <h3>${failed.length === 1 ? "推送失败" : `以下 ${failed.length} 条推送失败`}</h3>
+    <ul>${renderFailureListHtml(failed)}</ul>`;
+}
+
+function renderP115PasteErrors(failed) {
+  const el = document.getElementById("p115PasteErrors");
+  if (!el) return;
+  if (!failed.length) {
+    el.classList.add("hidden");
+    el.innerHTML = "";
+    return;
+  }
+  el.classList.remove("hidden");
+  el.innerHTML = `
+    <h3>${failed.length === 1 ? "推送失败" : `以下 ${failed.length} 条推送失败`}</h3>
+    <ul>${renderFailureListHtml(failed)}</ul>`;
+}
+
+function presentPushOutcome(data, { magnets = [], folderHint = "", source = "" } = {}) {
+  const results = alignPushResults(magnets, data?.results || []);
+  const failed = results.filter((row) => !row.success);
+  const okCount = results.length - failed.length;
+  const backendLabel =
+    data?.backend === "cd2" ? "CD2" : data?.backend === "p115" ? "115" : currentOfflineLabel();
+  const hint = folderHint || "";
+
+  if (!results.length) {
+    const fallback = data?.success === false
+      ? pushFailureMessage(data)
+      : data?.message || "推送完成";
+    if (data?.success === false) {
+      setStatus(`${backendLabel}${hint} ${fallback}`);
+      showToast(`推送失败：${fallback}`, { type: "error", timeout: 7200 });
+      if (source === "paste") setP115PasteStatus(fallback, true);
+      return false;
+    }
+    setStatus(`${backendLabel}${hint} ${fallback}`);
+    if (source === "paste") setP115PasteStatus(`${backendLabel}${hint} ${fallback}`);
+    return true;
+  }
+
+  if (!failed.length) {
+    const summary = `${backendLabel}${hint} 已推送 ${okCount} 条`;
+    setStatus(summary);
+    if (source === "paste") {
+      renderP115PasteList(magnets, results);
+      renderP115PasteErrors([]);
+      setP115PasteStatus(summary);
+    } else if (magnets.length > 1) {
+      clearPushErrorPanel();
+    }
+    return true;
+  }
+
+  const summary = okCount
+    ? `${backendLabel}${hint} 成功 ${okCount} 条，失败 ${failed.length} 条`
+    : `${backendLabel}${hint} ${failed.length} 条全部失败`;
+  setStatus(summary);
+  showToast(summary, { type: "error", timeout: 8000 });
+  if (source === "paste") {
+    renderP115PasteList(magnets, results);
+    renderP115PasteErrors(failed);
+    setP115PasteStatus(summary, true);
+  } else {
+    renderPushErrorPanel(failed);
+  }
+  if (typeof setNosubLookupStatus === "function" && nosubLookupModal && !nosubLookupModal.classList.contains("hidden")) {
+    setNosubLookupStatus(
+      `${summary}：${failed.map((row) => `${pushItemLabel(row)} ${row.message || "失败"}`).join("；")}`,
+      true
+    );
+  }
+  return false;
+}
+
 async function pushToOffline({
   magnets = [],
   code = null,
@@ -1534,6 +1701,7 @@ async function pushToOffline({
   button = null,
   pushFolderId = null,
   onSuccess = null,
+  source = "",
 }) {
   if (!pushReady) {
     setStatus("推送未就绪，请登录后在配置页设置 CD2 或 115");
@@ -1549,7 +1717,7 @@ async function pushToOffline({
       if (pushFolders.length === 1) {
         pushFolderId = pushFolders[0].id;
       } else {
-        openPushFolderModal({ magnets, code, pushBest, button, onSuccess });
+        openPushFolderModal({ magnets, code, pushBest, button, onSuccess, source });
         return false;
       }
     }
@@ -1572,19 +1740,42 @@ async function pushToOffline({
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorMessage(data, `HTTP ${res.status}`));
-    if (data.success === false) throw new Error(pushFailureMessage(data));
     const folder = pushFolders.find((item) => item.id === pushFolderId);
     const folderHint = folder ? ` → ${folder.name}` : "";
-    setStatus(`${data.backend === "cd2" ? "CD2" : "115"}${folderHint} ${data.message || "推送完成"}`);
-    if (button) button.textContent = "已推送";
-    if (typeof onSuccess === "function") {
-      await onSuccess(data);
+    const allOk = presentPushOutcome(data, { magnets, folderHint, source });
+    if (allOk) {
+      if (button) button.textContent = "已推送";
+      if (typeof onSuccess === "function") {
+        await onSuccess(data);
+      }
+    } else if (button) {
+      button.textContent = originalText || pushLabel;
     }
-    return true;
+    return allOk;
   } catch (err) {
     const message = err.message || "推送失败";
     setStatus(`推送失败: ${message}`);
     showToast(`推送失败：${message}`, { type: "error", timeout: 7200 });
+    if (source === "paste" && magnets.length) {
+      const failed = magnets.map((link, index) => ({
+        link,
+        index,
+        success: false,
+        message,
+      }));
+      renderP115PasteList(magnets, failed);
+      renderP115PasteErrors(failed);
+      setP115PasteStatus(message, true);
+    } else if (magnets.length > 1) {
+      renderPushErrorPanel(
+        magnets.map((link, index) => ({
+          link,
+          index,
+          success: false,
+          message,
+        }))
+      );
+    }
     if (typeof setNosubLookupStatus === "function" && nosubLookupModal && !nosubLookupModal.classList.contains("hidden")) {
       setNosubLookupStatus(`推送失败：${message}`, true);
     }
@@ -2005,23 +2196,39 @@ function extractMagnetLinks(text) {
   return links;
 }
 
-function renderP115PasteList(links) {
+function renderP115PasteList(links, outcomes = null) {
   if (!p115PasteList) return;
   if (!links.length) {
     p115PasteList.innerHTML = "";
     return;
   }
-  p115PasteList.innerHTML = links
-    .map(
-      (link, index) => `
-      <div class="dup-file">
+  const hasOutcomes = Array.isArray(outcomes);
+  const rows = hasOutcomes ? alignPushResults(links, outcomes) : links.map((link, index) => ({ link, index }));
+  p115PasteList.innerHTML = rows
+    .map((row) => {
+      const badge = !hasOutcomes
+        ? ""
+        : row.success
+          ? `<span class="p115-paste-badge is-ok">成功</span>`
+          : `<span class="p115-paste-badge is-fail">失败</span>`;
+      const reason =
+        hasOutcomes && !row.success
+          ? `<div class="p115-paste-reason">${escapeHtml(row.message || "未知错误")}</div>`
+          : "";
+      const stateClass = !hasOutcomes ? "" : row.success ? " is-ok" : " is-fail";
+      return `
+      <div class="dup-file${stateClass}">
         <div class="dup-file-name">
-          <strong>第 ${index + 1} 条</strong>
-          <button class="ghost-btn p115-parse-one-btn" type="button" data-link="${escapeAttr(link)}">解析这条</button>
+          <strong>第 ${row.index + 1} 条</strong>
+          <div class="p115-paste-row-actions">
+            ${badge}
+            <button class="ghost-btn p115-parse-one-btn" type="button" data-link="${escapeAttr(row.link)}">解析这条</button>
+          </div>
         </div>
-        <div class="dup-file-path">${escapeHtml(link)}</div>
-      </div>`
-    )
+        <div class="dup-file-path">${escapeHtml(row.link)}</div>
+        ${reason}
+      </div>`;
+    })
     .join("");
 }
 
@@ -2072,37 +2279,60 @@ async function pushPastedMagnetsWithCurrentBackend(links, button) {
   if (!ok) return false;
   if (p115TabUsesCd2()) {
     setP115PasteStatus(`正在推送到 ${label}...`, false, true);
-    const success = await pushToOffline({ magnets: links, button });
-    if (success) {
-      setP115PasteStatus(`已推送 ${links.length} 条到 ${label}${folder && !folder.includes("选择") ? ` → ${folder}` : ""}`);
-    } else if (!pushFolderModal?.classList.contains("hidden")) {
+    const success = await pushToOffline({ magnets: links, button, source: "paste" });
+    if (!success && !pushFolderModal?.classList.contains("hidden")) {
       setP115PasteStatus("请选择推送目录");
-    } else {
-      setP115PasteStatus("推送未完成，请检查 CD2 令牌和推送目录", true);
     }
     return success;
   }
   if (button) button.disabled = true;
-  let success = 0;
+  const results = [];
   try {
     for (let index = 0; index < links.length; index += 1) {
       setP115PasteStatus(`正在整条推送 ${index + 1}/${links.length}...`, false, true);
-      const res = await authFetch("/api/p115/magnet/push", {
-        method: "POST",
-        body: JSON.stringify({ magnet: links[index], info_hash: "", wanted: [] }),
-      });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(apiErrorMessage(data, `第 ${index + 1} 条推送失败`));
-      if (data.success === false) throw new Error(pushFailureMessage(data, `第 ${index + 1} 条推送失败`));
-      if (data.success) success += 1;
+      try {
+        const res = await authFetch("/api/p115/magnet/push", {
+          method: "POST",
+          body: JSON.stringify({ magnet: links[index], info_hash: "", wanted: [] }),
+        });
+        const data = await res.json().catch(() => ({}));
+        const row = data.results?.[0];
+        if (!res.ok) {
+          results.push({
+            link: links[index],
+            success: false,
+            message: apiErrorMessage(data, `第 ${index + 1} 条推送失败`),
+            task_name: "",
+          });
+          continue;
+        }
+        const ok = row ? row.success !== false : data.success !== false;
+        results.push({
+          link: links[index],
+          success: Boolean(ok),
+          message:
+            (row && row.message) ||
+            data.message ||
+            (ok ? "推送成功" : pushFailureMessage(data, `第 ${index + 1} 条推送失败`)),
+          task_name: row?.task_name || "",
+        });
+      } catch (err) {
+        results.push({
+          link: links[index],
+          success: false,
+          message: err.message || `第 ${index + 1} 条推送失败`,
+          task_name: "",
+        });
+      }
     }
-    setP115PasteStatus(`已整条推送 ${success}/${links.length} 条到 115${p115FolderPath ? ` → ${p115FolderPath}` : ""}`);
-    return true;
-  } catch (err) {
-    const message = err.message || "整条推送失败";
-    setP115PasteStatus(message, true);
-    showToast(`推送失败：${message}`, { type: "error", timeout: 7200 });
-    return false;
+    return presentPushOutcome(
+      { backend: "p115", results, success: results.some((row) => row.success) },
+      {
+        magnets: links,
+        folderHint: p115FolderPath ? ` → ${p115FolderPath}` : "",
+        source: "paste",
+      }
+    );
   } finally {
     if (button) button.disabled = false;
   }
@@ -2146,6 +2376,7 @@ p115PasteList?.addEventListener("click", async (event) => {
 p115MagnetInput?.addEventListener("input", () => {
   const links = currentP115MagnetLinks();
   renderP115PasteList(links);
+  renderP115PasteErrors([]);
   if (links.length) {
     setP115PasteStatus(`已识别 ${links.length} 条链接`);
   }

@@ -260,9 +260,16 @@ async def _handle_push(body: Push115Request, user: dict | None = None) -> Push11
         )
 
     success_count = sum(1 for item in items if item.success)
+    fail_count = len(items) - success_count
+    if fail_count == 0:
+        message = f"成功 {success_count}/{len(items)}"
+    elif success_count == 0:
+        message = f"全部失败 {fail_count}/{len(items)}"
+    else:
+        message = f"成功 {success_count}/{len(items)}，失败 {fail_count} 条"
     return Push115Response(
         success=success_count > 0,
-        message=f"成功 {success_count}/{len(items)}",
+        message=message,
         backend=backend,
         results=items,
     )
