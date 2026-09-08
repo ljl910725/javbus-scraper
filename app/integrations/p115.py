@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import gzip
 import hashlib
@@ -422,9 +423,7 @@ def _default_wanted(files: list[dict]) -> list[bool]:
     return flags
 
 
-async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
-    from app.integrations.magnet_meta import MagnetMetaError, fetch_magnet_info_bytes, wrap_info_as_torrent
-
+async def _fetch_cached_torrent_bytes(info_hash: str) -> bytes:
     expected = (info_hash or "").strip().lower()
     if not expected:
         raise P115Error("缺少 infohash")
@@ -436,7 +435,7 @@ async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
             "User-Agent": P115_HEADERS["User-Agent"],
             "Accept": "*/*",
         },
-        timeout=12.0,
+        timeout=5.0,
         follow_redirects=True,
     ) as client:
         for template in _TORRENT_CACHE_URLS:
@@ -458,7 +457,7 @@ async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
                     if got != expected:
                         fake_count += 1
                         last_error = f"{url} 返回假种子（infohash 不匹配）"
-                        continue
+                        break
                     return data
                 except P115Error as exc:
                     last_error = str(exc)
@@ -466,16 +465,32 @@ async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
                 except Exception as exc:
                     last_error = str(exc)
                     continue
+            if fake_count:
+                break
+    if fake_count:
+        raise P115Error(f"公共缓存为假种子：{last_error}")
+    raise P115Error(f"无法根据磁力获取种子文件: {last_error}")
+
+
+async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
+    from app.integrations.magnet_meta import MagnetMetaError, fetch_magnet_info_bytes, wrap_info_as_torrent
+
+    expected = (info_hash or "").strip().lower()
     try:
-        info_bytes = await fetch_magnet_info_bytes(expected, magnet or f"magnet:?xt=urn:btih:{expected}", timeout=16)
+        return await _fetch_cached_torrent_bytes(expected)
+    except P115Error as cache_error:
+        cache_message = str(cache_error)
+    try:
+        info_bytes = await fetch_magnet_info_bytes(
+            expected,
+            magnet or f"magnet:?xt=urn:btih:{expected}",
+            timeout=16,
+        )
         return wrap_info_as_torrent(info_bytes)
     except MagnetMetaError as exc:
-        last_error = str(exc)
+        raise P115Error(f"{cache_message}；{exc}") from exc
     except Exception as exc:
-        last_error = str(exc)
-    if fake_count:
-        raise P115Error(f"公共缓存为假种子；{last_error}")
-    raise P115Error(f"无法根据磁力获取种子文件: {last_error}")
+        raise P115Error(f"{cache_message}；{exc}") from exc
 
 
 async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
@@ -488,19 +503,27 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
         "folder_path": cfg.get("p115_folder_path") or "",
     }
     try:
-        raw = await _fetch_torrent_bytes(info_hash, magnet=link)
-        name, files = parse_torrent_files(raw)
-    except P115Error as exc:
-        preview = None
-        try:
-            from app.integrations.magnet_meta import fetch_index_preview
+        raw = await _fetch_cached_torrent_bytes(info_hash)
+    except P115Error:
+        raw = None
+    if raw is None:
+        from app.integrations.magnet_meta import (
+            MagnetMetaError,
+            fetch_index_preview,
+            fetch_magnet_info_bytes,
+            wrap_info_as_torrent,
+        )
 
-            preview = await fetch_index_preview(link)
-        except Exception:
-            preview = None
-        if preview:
-            count = int(preview.get("count") or 0)
-            name = preview["name"]
+        info_res, preview_res = await asyncio.gather(
+            fetch_magnet_info_bytes(info_hash, link, timeout=16),
+            fetch_index_preview(link),
+            return_exceptions=True,
+        )
+        if isinstance(info_res, bytes):
+            raw = wrap_info_as_torrent(info_res)
+        elif isinstance(preview_res, dict) and preview_res:
+            count = int(preview_res.get("count") or 0)
+            name = preview_res["name"]
             path = name if count <= 1 else f"{name}/（共 {count} 个文件）"
             return {
                 "magnet": link,
@@ -514,11 +537,27 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
                     {
                         "index": 0,
                         "path": path,
-                        "size": int(preview.get("size") or 0),
+                        "size": int(preview_res.get("size") or 0),
                         "wanted": True,
                     }
                 ],
             }
+        message = str(info_res) if isinstance(info_res, Exception) else "未能解析磁力"
+        if isinstance(info_res, MagnetMetaError):
+            message = str(info_res)
+        return {
+            "magnet": link,
+            "info_hash": info_hash,
+            "name": "",
+            "parsed": False,
+            "selectable": False,
+            "message": message,
+            **folder,
+            "files": [],
+        }
+    try:
+        name, files = parse_torrent_files(raw)
+    except P115Error as exc:
         return {
             "magnet": link,
             "info_hash": info_hash,
