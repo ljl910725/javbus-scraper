@@ -375,6 +375,7 @@ async def p115_magnet_parse(body: P115MagnetParseRequest, user: CurrentUser) -> 
             name=data.get("name") or "",
             files=[P115MagnetFile(**item) for item in data.get("files") or []],
             parsed=bool(data.get("parsed")),
+            selectable=data.get("selectable", True) is not False,
             message=data.get("message") or "",
             folder_cid=data.get("folder_cid") or "",
             folder_path=data.get("folder_path") or "",

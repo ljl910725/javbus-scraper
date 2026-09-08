@@ -193,6 +193,7 @@ class P115MagnetParseResponse(BaseModel):
     name: str = ""
     files: list[P115MagnetFile] = Field(default_factory=list)
     parsed: bool = False
+    selectable: bool = True
     message: str = ""
     folder_cid: str = ""
     folder_path: str = ""

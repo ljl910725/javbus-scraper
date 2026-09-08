@@ -422,7 +422,9 @@ def _default_wanted(files: list[dict]) -> list[bool]:
     return flags
 
 
-async def _fetch_torrent_bytes(info_hash: str) -> bytes:
+async def _fetch_torrent_bytes(info_hash: str, magnet: str = "") -> bytes:
+    from app.integrations.magnet_meta import MagnetMetaError, fetch_magnet_info_bytes, wrap_info_as_torrent
+
     expected = (info_hash or "").strip().lower()
     if not expected:
         raise P115Error("缺少 infohash")
@@ -464,8 +466,15 @@ async def _fetch_torrent_bytes(info_hash: str) -> bytes:
                 except Exception as exc:
                     last_error = str(exc)
                     continue
+    try:
+        info_bytes = await fetch_magnet_info_bytes(expected, magnet or f"magnet:?xt=urn:btih:{expected}", timeout=16)
+        return wrap_info_as_torrent(info_bytes)
+    except MagnetMetaError as exc:
+        last_error = str(exc)
+    except Exception as exc:
+        last_error = str(exc)
     if fake_count:
-        raise P115Error("公共缓存返回了假种子，未能获取与磁力匹配的文件列表。可整条推送，由 CD2/115 自行解析")
+        raise P115Error(f"公共缓存为假种子；{last_error}")
     raise P115Error(f"无法根据磁力获取种子文件: {last_error}")
 
 
@@ -474,18 +483,50 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
         raise P115Error("仅支持 magnet 链接")
     info_hash = extract_infohash(link)
     cfg = _cfg(user_settings)
+    folder = {
+        "folder_cid": _folder_cid(user_settings),
+        "folder_path": cfg.get("p115_folder_path") or "",
+    }
     try:
-        raw = await _fetch_torrent_bytes(info_hash)
+        raw = await _fetch_torrent_bytes(info_hash, magnet=link)
         name, files = parse_torrent_files(raw)
     except P115Error as exc:
+        preview = None
+        try:
+            from app.integrations.magnet_meta import fetch_index_preview
+
+            preview = await fetch_index_preview(link)
+        except Exception:
+            preview = None
+        if preview:
+            count = int(preview.get("count") or 0)
+            name = preview["name"]
+            path = name if count <= 1 else f"{name}/（共 {count} 个文件）"
+            return {
+                "magnet": link,
+                "info_hash": info_hash,
+                "name": name,
+                "parsed": True,
+                "selectable": False,
+                "message": "已从磁力索引得到任务名；未能列出内部文件，确认后将整条推送",
+                **folder,
+                "files": [
+                    {
+                        "index": 0,
+                        "path": path,
+                        "size": int(preview.get("size") or 0),
+                        "wanted": True,
+                    }
+                ],
+            }
         return {
             "magnet": link,
             "info_hash": info_hash,
             "name": "",
             "parsed": False,
+            "selectable": False,
             "message": str(exc),
-            "folder_cid": _folder_cid(user_settings),
-            "folder_path": cfg.get("p115_folder_path") or "",
+            **folder,
             "files": [],
         }
     wanted_flags = _default_wanted(files)
@@ -494,9 +535,9 @@ async def parse_magnet(link: str, user_settings: dict | None = None) -> dict:
         "info_hash": info_hash,
         "name": name,
         "parsed": True,
+        "selectable": True,
         "message": "",
-        "folder_cid": _folder_cid(user_settings),
-        "folder_path": cfg.get("p115_folder_path") or "",
+        **folder,
         "files": [
             {
                 "index": index,

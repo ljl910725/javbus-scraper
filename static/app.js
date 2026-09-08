@@ -1712,11 +1712,13 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null, targ
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorMessage(data, "解析失败"));
     pendingP115Magnet.parsed = data;
-    renderP115MagnetFiles(data, { previewOnly: pushTarget === "cd2" });
+    const previewOnly = pushTarget === "cd2" || data.selectable === false;
+    renderP115MagnetFiles(data, { previewOnly });
+    p115MagnetToolbar?.classList.toggle("hidden", previewOnly);
     const extra = data.parsed
-      ? pushTarget === "cd2"
+      ? data.message || (pushTarget === "cd2"
         ? `已解析 ${data.files?.length || 0} 个文件。CD2 只能整条推送，文件列表供确认。`
-        : `已解析 ${data.files?.length || 0} 个文件，默认勾选较大视频。可改选后再推送。`
+        : `已解析 ${data.files?.length || 0} 个文件，默认勾选较大视频。可改选后再推送。`)
       : data.message || "未能解析文件列表，确认后将整条磁力推送。";
     p115MagnetHint.textContent = `${folderText}。${extra}`;
     setP115MagnetStatus(data.parsed ? "" : extra, !data.parsed);
@@ -1734,8 +1736,8 @@ async function confirmP115MagnetPush() {
   const parsed = pendingP115Magnet.parsed || {};
   const pushTarget = pendingP115Magnet.target || magnetPushTarget();
   const label = magnetPushLabel(pushTarget);
-  const wanted = selectedP115Indexes();
-  if (pushTarget === "p115" && parsed.parsed && parsed.files?.length && !wanted.length) {
+  const wanted = parsed.selectable === false ? [] : selectedP115Indexes();
+  if (pushTarget === "p115" && parsed.parsed && parsed.selectable !== false && parsed.files?.length && !wanted.length) {
     setP115MagnetStatus("请至少选择一个文件", true);
     return;
   }
