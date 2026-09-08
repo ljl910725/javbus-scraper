@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=26090807" />
+  <link rel="stylesheet" href="/static/style.css?v=26090808" />
 </head>
 <body class="app-root">
   <div class="container">
@@ -407,17 +407,22 @@
         <h2 id="p115MagnetModalTitle">解析链接</h2>
         <button id="closeP115MagnetModalBtn" class="ghost-btn" type="button">关闭</button>
       </div>
-      <p id="p115MagnetHint" class="field-hint"></p>
+      <div class="p115-magnet-meta">
+        <p id="p115MagnetHint" class="p115-magnet-dest"></p>
+        <div id="p115MagnetStats" class="p115-magnet-stats" hidden aria-live="polite"></div>
+      </div>
       <div class="p115-magnet-toolbar">
         <button id="p115SelectVideosBtn" class="ghost-btn" type="button">只要视频</button>
         <button id="p115SelectAllBtn" class="ghost-btn" type="button">全选</button>
         <button id="p115SelectNoneBtn" class="ghost-btn" type="button">全不选</button>
       </div>
       <div id="p115MagnetFiles" class="p115-magnet-files"></div>
-      <div class="p115-magnet-actions">
-        <button id="p115MagnetConfirmBtn" type="button">确认推送</button>
+      <div class="p115-magnet-footer">
+        <p id="p115MagnetStatus" class="inline-status"></p>
+        <div class="p115-magnet-actions">
+          <button id="p115MagnetConfirmBtn" type="button">确认推送</button>
+        </div>
       </div>
-      <p id="p115MagnetStatus" class="inline-status"></p>
     </div>
   </div>
 
@@ -433,11 +438,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26090807"></script>
-  <script src="/static/nav.js?v=26090807"></script>
-  <script src="/static/app.js?v=26090807"></script>
-  <script src="/static/duplicates.js?v=26090807"></script>
-  <script src="/static/nosub.js?v=26090807"></script>
-  <script src="/static/cleanup.js?v=26090807"></script>
+  <script src="/static/auth.js?v=26090808"></script>
+  <script src="/static/nav.js?v=26090808"></script>
+  <script src="/static/app.js?v=26090808"></script>
+  <script src="/static/duplicates.js?v=26090808"></script>
+  <script src="/static/nosub.js?v=26090808"></script>
+  <script src="/static/cleanup.js?v=26090808"></script>
 </body>
 </html>

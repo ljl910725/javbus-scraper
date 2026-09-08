@@ -833,14 +833,6 @@ button:disabled {
   padding-left: 1.25rem;
 }
 
-.p115-file-row.preview-only {
-  cursor: default;
-}
-
-.p115-file-row.preview-only input {
-  accent-color: var(--muted);
-}
-
 .results {
   margin-top: 1.5rem;
   display: flex;
@@ -2200,55 +2192,267 @@ button:disabled {
 }
 
 .p115-magnet-modal-card {
-  width: min(720px, 96vw);
-  max-height: 92vh;
-  overflow: auto;
+  width: min(760px, 96vw);
+  max-height: min(92vh, 860px);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  padding-bottom: 1rem;
+}
+
+.p115-magnet-modal-card .modal-header,
+.p115-magnet-meta,
+.p115-magnet-toolbar {
+  flex-shrink: 0;
+}
+
+.p115-magnet-modal-card .modal-header h2 {
+  margin: 0;
+  min-width: 0;
+  font-size: 1.08rem;
+  line-height: 1.3;
+}
+
+.p115-magnet-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0 0 0.7rem;
+}
+
+.p115-magnet-dest {
+  margin: 0;
+  font-size: 0.84rem;
+  line-height: 1.45;
+  color: var(--muted);
+  overflow-wrap: anywhere;
+}
+
+.p115-magnet-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.3rem 0.85rem;
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+  letter-spacing: -0.02em;
+  color: color-mix(in srgb, var(--text) 78%, var(--muted));
+}
+
+.p115-magnet-stats span {
+  white-space: nowrap;
+}
+
+.p115-magnet-files ::selection {
+  background: color-mix(in srgb, var(--accent) 38%, transparent);
+  color: var(--text);
 }
 
 .p115-magnet-toolbar {
   display: flex;
-  flex-wrap: wrap;
-  gap: 0.45rem;
-  margin: 0.75rem 0 0.5rem;
+  flex-wrap: nowrap;
+  gap: 0.4rem;
+  margin: 0 0 0.65rem;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.p115-magnet-toolbar .ghost-btn {
+  flex-shrink: 0;
 }
 
 .p115-magnet-files {
-  max-height: 50vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow: auto;
   border: 1px solid var(--border);
-  border-radius: 10px;
-  padding: 0.4rem;
+  border-radius: var(--radius-md);
+  background: var(--bg-elevated);
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--muted) 55%, transparent) transparent;
 }
 
+.p115-file-head,
 .p115-file-row {
   display: grid;
-  grid-template-columns: auto 1fr auto;
-  gap: 0.55rem;
+  grid-template-columns: 1.35rem minmax(0, 1fr) 6.25rem;
+  gap: 0.45rem 0.75rem;
   align-items: center;
-  padding: 0.4rem 0.45rem;
-  border-radius: 8px;
-  font-weight: normal;
+}
+
+.p115-magnet-files.is-preview .p115-file-head,
+.p115-magnet-files.is-preview .p115-file-row {
+  grid-template-columns: minmax(0, 1fr) 6.25rem;
+}
+
+.p115-file-head {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 0.42rem 0.8rem;
+  background: color-mix(in srgb, var(--surface-raised) 92%, var(--bg));
+  border-bottom: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.7rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.p115-file-head span:last-child {
+  text-align: right;
+}
+
+.p115-magnet-modal-card label.p115-file-row {
+  display: grid;
+  margin: 0;
+  padding: 0.62rem 0.8rem;
+  border-bottom: 1px solid var(--border);
+  border-radius: 0;
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0;
+  color: var(--text);
+  cursor: pointer;
+}
+
+.p115-magnet-modal-card label.p115-file-row:last-child {
+  border-bottom: 0;
 }
 
 .p115-file-row:hover {
-  background: color-mix(in srgb, var(--bg) 70%, var(--accent) 8%);
+  background: color-mix(in srgb, var(--bg) 55%, var(--accent-soft));
 }
 
-.p115-file-path {
+.p115-file-row:has(input:checked) {
+  background: color-mix(in srgb, var(--accent-soft) 82%, transparent);
+}
+
+.p115-file-row:focus-within {
+  background: var(--accent-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--accent) 35%, transparent);
+}
+
+.p115-file-row.preview-only {
+  cursor: default;
+}
+
+.p115-magnet-modal-card .p115-file-row input[type="checkbox"] {
+  appearance: auto;
+  width: 1.05rem;
+  min-width: 1.05rem;
+  max-width: 1.05rem;
+  height: 1.05rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: none;
+  accent-color: var(--accent);
+}
+
+.p115-magnet-modal-card .p115-file-row input[type="checkbox"]:focus {
+  outline: none;
+  border: 0;
+  box-shadow: none;
+}
+
+.p115-file-name {
+  display: flex;
+  flex-direction: column;
+  gap: 0.14rem;
+  min-width: 0;
+}
+
+.p115-file-dir {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  white-space: nowrap;
-  font-size: 0.86rem;
+}
+
+.p115-file-base {
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  word-break: break-word;
 }
 
 .p115-file-size {
   color: var(--muted);
-  font-size: 0.78rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.03em;
+  text-align: right;
   white-space: nowrap;
 }
 
-.p115-magnet-actions {
+.p115-magnet-files .folder-empty {
+  margin: 0;
+  padding: 1.6rem 1rem;
+  text-align: center;
+  color: var(--muted);
+}
+
+.p115-magnet-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem;
   margin-top: 0.85rem;
+  padding-top: 0.85rem;
+  border-top: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.p115-magnet-footer .inline-status {
+  flex: 1 1 auto;
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+
+.p115-magnet-actions {
+  flex-shrink: 0;
+  margin: 0;
+}
+
+@media (max-width: 640px) {
+  .p115-file-head {
+    display: none;
+  }
+
+  .p115-file-row,
+  .p115-magnet-modal-card label.p115-file-row {
+    grid-template-columns: 1.35rem minmax(0, 1fr);
+    align-items: start;
+  }
+
+  .p115-magnet-files.is-preview .p115-file-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .p115-file-size {
+    grid-column: 2;
+    text-align: left;
+  }
+
+  .p115-magnet-files.is-preview .p115-file-size {
+    grid-column: 1;
+  }
+
+  .p115-magnet-footer {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .p115-magnet-actions button {
+    width: 100%;
+  }
 }
 
 #tabP115 textarea {

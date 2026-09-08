@@ -1618,11 +1618,13 @@ function closePushFolderModal() {
 const p115MagnetModal = document.getElementById("p115MagnetModal");
 const p115MagnetModalTitle = document.getElementById("p115MagnetModalTitle");
 const p115MagnetHint = document.getElementById("p115MagnetHint");
+const p115MagnetStats = document.getElementById("p115MagnetStats");
 const p115MagnetFiles = document.getElementById("p115MagnetFiles");
 const p115MagnetStatus = document.getElementById("p115MagnetStatus");
 const p115MagnetConfirmBtn = document.getElementById("p115MagnetConfirmBtn");
 const closeP115MagnetModalBtn = document.getElementById("closeP115MagnetModalBtn");
 const p115MagnetToolbar = document.querySelector("#p115MagnetModal .p115-magnet-toolbar");
+const P115_VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".iso"];
 
 function setP115MagnetStatus(message, isError = false) {
   if (!p115MagnetStatus) return;
@@ -1639,26 +1641,92 @@ function formatP115Size(size) {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function renderP115MagnetFiles(data, { previewOnly = false } = {}) {
+function splitMagnetPath(path) {
+  const raw = String(path || "").replace(/\\/g, "/");
+  const idx = raw.lastIndexOf("/");
+  if (idx < 0) return { dir: "", base: raw || "未命名文件" };
+  return {
+    dir: raw.slice(0, idx),
+    base: raw.slice(idx + 1) || raw,
+  };
+}
+
+function clearP115MagnetStats() {
+  if (!p115MagnetStats) return;
+  p115MagnetStats.hidden = true;
+  p115MagnetStats.innerHTML = "";
+}
+
+function updateP115MagnetStats(data, { previewOnly = false } = {}) {
+  if (!p115MagnetStats) return;
   const files = data?.files || [];
   if (!files.length) {
-    p115MagnetFiles.innerHTML = `<p class="folder-empty">${
-      data?.parsed ? "种子里没有文件" : "无法列出文件，确认后将整条磁力推送"
-    }</p>`;
+    clearP115MagnetStats();
     return;
   }
-  p115MagnetFiles.innerHTML = files
-    .map(
-      (file) => `
+  const totalBytes = files.reduce((sum, file) => sum + (Number(file.size) || 0), 0);
+  const parts = [
+    `<span>${files.length} 个文件</span>`,
+    `<span>共 ${escapeHtml(formatP115Size(totalBytes))}</span>`,
+  ];
+  if (!previewOnly) {
+    const wanted = new Set(selectedP115Indexes());
+    let selectedCount = 0;
+    let selectedBytes = 0;
+    files.forEach((file) => {
+      if (!wanted.has(Number(file.index))) return;
+      selectedCount += 1;
+      selectedBytes += Number(file.size) || 0;
+    });
+    parts.push(`<span>已选 ${selectedCount} · ${escapeHtml(formatP115Size(selectedBytes))}</span>`);
+  }
+  p115MagnetStats.innerHTML = parts.join("");
+  p115MagnetStats.hidden = false;
+}
+
+function refreshP115MagnetStats() {
+  const previewOnly = p115MagnetFiles?.classList.contains("is-preview");
+  updateP115MagnetStats(pendingP115Magnet?.parsed, { previewOnly });
+}
+
+function renderP115MagnetFiles(data, { previewOnly = false } = {}) {
+  const files = data?.files || [];
+  p115MagnetFiles.classList.toggle("is-preview", previewOnly);
+  if (!files.length) {
+    p115MagnetFiles.innerHTML = `<p class="folder-empty">${
+      data?.parsed ? "种子里没有文件" : "无法列出文件，确认后将整条链接推送"
+    }</p>`;
+    updateP115MagnetStats(data, { previewOnly });
+    return;
+  }
+  const head = previewOnly
+    ? `<div class="p115-file-head" aria-hidden="true"><span>文件</span><span>大小</span></div>`
+    : `<div class="p115-file-head" aria-hidden="true"><span></span><span>文件</span><span>大小</span></div>`;
+  p115MagnetFiles.innerHTML =
+    head +
+    files
+      .map((file) => {
+        const { dir, base } = splitMagnetPath(file.path);
+        const dirHtml = dir
+          ? `<span class="p115-file-dir" title="${escapeAttr(dir)}">${escapeHtml(dir)}</span>`
+          : "";
+        const checkbox = previewOnly
+          ? ""
+          : `<input type="checkbox" data-index="${file.index}" data-path="${escapeAttr(
+              file.path || ""
+            )}" ${file.wanted ? "checked" : ""} />`;
+        return `
       <label class="p115-file-row${previewOnly ? " preview-only" : ""}">
-        <input type="checkbox" data-index="${file.index}" ${file.wanted ? "checked" : ""} ${
-          previewOnly ? "disabled" : ""
-        } />
-        <span class="p115-file-path" title="${escapeAttr(file.path)}">${escapeHtml(file.path)}</span>
+        ${checkbox}
+        <span class="p115-file-name" title="${escapeAttr(file.path || "")}">
+          ${dirHtml}
+          <span class="p115-file-base">${escapeHtml(base)}</span>
+        </span>
         <span class="p115-file-size">${escapeHtml(formatP115Size(file.size))}</span>
-      </label>`
-    )
-    .join("");
+      </label>`;
+      })
+      .join("");
+  updateP115MagnetStats(data, { previewOnly });
 }
 
 function selectedP115Indexes() {
@@ -1668,6 +1736,7 @@ function selectedP115Indexes() {
 function closeP115MagnetModal() {
   p115MagnetModal?.classList.add("hidden");
   pendingP115Magnet = null;
+  clearP115MagnetStats();
   setP115MagnetStatus("");
 }
 
@@ -1718,7 +1787,9 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null, targ
   p115MagnetModal.classList.remove("hidden");
   const folderText = magnetPushFolderText(pushTarget);
   p115MagnetHint.textContent = folderText;
+  clearP115MagnetStats();
   p115MagnetFiles.innerHTML = '<p class="folder-empty">正在解析文件列表...</p>';
+  p115MagnetFiles.classList.remove("is-preview");
   p115MagnetConfirmBtn.disabled = true;
   setP115MagnetStatus("正在解析链接，请稍候...");
   try {
@@ -1732,13 +1803,16 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null, targ
     const previewOnly = pushTarget === "cd2" || data.selectable === false;
     renderP115MagnetFiles(data, { previewOnly });
     p115MagnetToolbar?.classList.toggle("hidden", previewOnly);
-    const extra = data.parsed
-      ? data.message || (pushTarget === "cd2"
-        ? `已解析 ${data.files?.length || 0} 个文件。CD2 只能整条推送，文件列表供确认。`
-        : `已解析 ${data.files?.length || 0} 个文件，默认勾选较大视频。可改选后再推送。`)
-      : data.message || "未能解析文件列表，确认后将整条磁力推送。";
-    p115MagnetHint.textContent = `${folderText}。${extra}`;
-    setP115MagnetStatus(data.parsed ? "" : extra, !data.parsed);
+    p115MagnetHint.textContent = folderText;
+    if (!data.parsed) {
+      setP115MagnetStatus(data.message || "未能解析文件列表，确认后将整条链接推送。", true);
+    } else if (pushTarget === "cd2") {
+      setP115MagnetStatus("CD2 只能整条推送，文件列表供确认。");
+    } else if (data.selectable === false) {
+      setP115MagnetStatus(data.message || "当前无法勾选文件，确认后将整条推送。");
+    } else {
+      setP115MagnetStatus(data.message || "默认勾选较大视频，可改选后再推送。");
+    }
     p115MagnetConfirmBtn.disabled = false;
   } catch (err) {
     pendingP115Magnet.parsed = { magnet, parsed: false, files: [], info_hash: "" };
@@ -1825,23 +1899,27 @@ p115MagnetModal?.addEventListener("click", (event) => {
   if (event.target === p115MagnetModal) closeP115MagnetModal();
 });
 p115MagnetConfirmBtn?.addEventListener("click", confirmP115MagnetPush);
+p115MagnetFiles?.addEventListener("change", refreshP115MagnetStats);
 document.getElementById("p115SelectAllBtn")?.addEventListener("click", () => {
   p115MagnetFiles.querySelectorAll("input[type=checkbox]").forEach((input) => {
     input.checked = true;
   });
+  refreshP115MagnetStats();
 });
 document.getElementById("p115SelectNoneBtn")?.addEventListener("click", () => {
   p115MagnetFiles.querySelectorAll("input[type=checkbox]").forEach((input) => {
     input.checked = false;
   });
+  refreshP115MagnetStats();
 });
 document.getElementById("p115SelectVideosBtn")?.addEventListener("click", () => {
-  const videoExts = [".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".iso"];
   p115MagnetFiles.querySelectorAll(".p115-file-row").forEach((row) => {
-    const path = (row.querySelector(".p115-file-path")?.textContent || "").toLowerCase();
     const input = row.querySelector("input[type=checkbox]");
-    if (input) input.checked = videoExts.some((ext) => path.endsWith(ext));
+    if (!input) return;
+    const path = (input.dataset.path || "").toLowerCase();
+    input.checked = P115_VIDEO_EXTS.some((ext) => path.endsWith(ext));
   });
+  refreshP115MagnetStats();
 });
 
 const p115MagnetInput = document.getElementById("p115MagnetInput");
