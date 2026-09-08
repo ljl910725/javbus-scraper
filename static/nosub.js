@@ -1686,6 +1686,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
       magnet: listPush115.dataset.link || "",
       code: listPush115.dataset.code || "",
       button: listPush115,
+      target: "p115",
     });
     return;
   }
@@ -1698,6 +1699,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
         magnet: listPushBest.dataset.link || "",
         code: listPushBest.dataset.code,
         button: listPushBest,
+        target: "p115",
       });
       return;
     }
@@ -1775,6 +1777,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
       magnet: push115Btn.dataset.link || "",
       code: push115Btn.dataset.code || "",
       button: push115Btn,
+      target: "p115",
     });
     return;
   }
@@ -1782,7 +1785,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
   const pushBtn = event.target.closest(".push-btn");
   if (pushBtn) {
     if (pushBackend === "p115") {
-      await openP115MagnetModal({ magnet: pushBtn.dataset.link || "", button: pushBtn });
+      await openP115MagnetModal({ magnet: pushBtn.dataset.link || "", button: pushBtn, target: "p115" });
       return;
     }
     await pushToOffline({
@@ -1800,6 +1803,7 @@ nosubLookupResults?.addEventListener("click", async (event) => {
         magnet: pushBestBtn.dataset.link || "",
         code: pushBestBtn.dataset.code,
         button: pushBestBtn,
+        target: "p115",
       });
       return;
     }

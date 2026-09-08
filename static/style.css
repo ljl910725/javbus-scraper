@@ -833,12 +833,12 @@ button:disabled {
   padding-left: 1.25rem;
 }
 
-.errors .error-sources {
-  margin: 0.35rem 0 0.6rem;
-  padding-left: 1.1rem;
-  color: color-mix(in srgb, var(--danger) 80%, var(--text));
-  font-size: 0.9rem;
-  line-height: 1.55;
+.p115-file-row.preview-only {
+  cursor: default;
+}
+
+.p115-file-row.preview-only input {
+  accent-color: var(--muted);
 }
 
 .results {

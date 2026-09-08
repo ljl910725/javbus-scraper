@@ -1599,11 +1599,13 @@ function closePushFolderModal() {
 }
 
 const p115MagnetModal = document.getElementById("p115MagnetModal");
+const p115MagnetModalTitle = document.getElementById("p115MagnetModalTitle");
 const p115MagnetHint = document.getElementById("p115MagnetHint");
 const p115MagnetFiles = document.getElementById("p115MagnetFiles");
 const p115MagnetStatus = document.getElementById("p115MagnetStatus");
 const p115MagnetConfirmBtn = document.getElementById("p115MagnetConfirmBtn");
 const closeP115MagnetModalBtn = document.getElementById("closeP115MagnetModalBtn");
+const p115MagnetToolbar = document.querySelector("#p115MagnetModal .p115-magnet-toolbar");
 
 function setP115MagnetStatus(message, isError = false) {
   if (!p115MagnetStatus) return;
@@ -1620,17 +1622,21 @@ function formatP115Size(size) {
   return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
-function renderP115MagnetFiles(data) {
+function renderP115MagnetFiles(data, { previewOnly = false } = {}) {
   const files = data?.files || [];
   if (!files.length) {
-    p115MagnetFiles.innerHTML = `<p class="folder-empty">${data?.parsed ? "种子里没有文件" : "无法列出文件，将整条磁力推送到 115"}</p>`;
+    p115MagnetFiles.innerHTML = `<p class="folder-empty">${
+      data?.parsed ? "种子里没有文件" : "无法列出文件，确认后将整条磁力推送"
+    }</p>`;
     return;
   }
   p115MagnetFiles.innerHTML = files
     .map(
       (file) => `
-      <label class="p115-file-row">
-        <input type="checkbox" data-index="${file.index}" ${file.wanted ? "checked" : ""} />
+      <label class="p115-file-row${previewOnly ? " preview-only" : ""}">
+        <input type="checkbox" data-index="${file.index}" ${file.wanted ? "checked" : ""} ${
+          previewOnly ? "disabled" : ""
+        } />
         <span class="p115-file-path" title="${escapeAttr(file.path)}">${escapeHtml(file.path)}</span>
         <span class="p115-file-size">${escapeHtml(formatP115Size(file.size))}</span>
       </label>`
@@ -1648,9 +1654,36 @@ function closeP115MagnetModal() {
   setP115MagnetStatus("");
 }
 
-async function openP115MagnetModal({ magnet = "", code = "", button = null } = {}) {
-  if (!p115Ready) {
-    setStatus("115 未就绪，请先在配置页填写 Cookie 并保存目录");
+function magnetPushTarget(explicit) {
+  if (explicit === "cd2" || explicit === "p115") return explicit;
+  return p115TabUsesCd2() ? "cd2" : "p115";
+}
+
+function magnetPushLabel(target) {
+  return target === "cd2" ? "CD2" : "115";
+}
+
+function magnetPushFolderText(target) {
+  if (target === "cd2") {
+    const folder = currentOfflineFolderHint();
+    return folder ? `保存到 ${folder}` : "未配置 CD2 推送目录";
+  }
+  return p115FolderPath ? `保存到 ${p115FolderPath}` : "未配置保存目录，将放到 115 默认离线目录";
+}
+
+async function openP115MagnetModal({ magnet = "", code = "", button = null, target = "" } = {}) {
+  const pushTarget = magnetPushTarget(target);
+  const label = magnetPushLabel(pushTarget);
+  if (pushTarget === "p115" && !p115Ready) {
+    const message = "115 未就绪，请先在配置页填写 Cookie 并保存目录";
+    setP115PasteStatus(message, true);
+    setStatus(message);
+    return;
+  }
+  if (pushTarget === "cd2" && !pushReady) {
+    const message = "CD2 未就绪，请先在配置页填写 API 令牌并添加推送目录";
+    setP115PasteStatus(message, true);
+    setStatus(message);
     return;
   }
   if (!magnet && code) {
@@ -1660,10 +1693,13 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null } = {
     setStatus("没有可推送的磁力链接");
     return;
   }
-  pendingP115Magnet = { magnet, code, button, parsed: null };
+  pendingP115Magnet = { magnet, code, button, parsed: null, target: pushTarget };
+  if (p115MagnetModalTitle) p115MagnetModalTitle.textContent = `解析磁力并推送到 ${label}`;
+  if (p115MagnetConfirmBtn) p115MagnetConfirmBtn.textContent = `推送到 ${label}`;
+  p115MagnetToolbar?.classList.toggle("hidden", pushTarget === "cd2");
   bringModalToFront(p115MagnetModal);
   p115MagnetModal.classList.remove("hidden");
-  const folderText = p115FolderPath ? `保存到 ${p115FolderPath}` : "未配置保存目录，将放到 115 默认离线目录";
+  const folderText = magnetPushFolderText(pushTarget);
   p115MagnetHint.textContent = folderText;
   p115MagnetFiles.innerHTML = '<p class="folder-empty">正在解析磁力文件列表...</p>';
   p115MagnetConfirmBtn.disabled = true;
@@ -1676,16 +1712,18 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null } = {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorMessage(data, "解析失败"));
     pendingP115Magnet.parsed = data;
-    renderP115MagnetFiles(data);
+    renderP115MagnetFiles(data, { previewOnly: pushTarget === "cd2" });
     const extra = data.parsed
-      ? `已解析 ${data.files?.length || 0} 个文件，默认勾选较大视频。可改选后再推送。`
+      ? pushTarget === "cd2"
+        ? `已解析 ${data.files?.length || 0} 个文件。CD2 只能整条推送，文件列表供确认。`
+        : `已解析 ${data.files?.length || 0} 个文件，默认勾选较大视频。可改选后再推送。`
       : data.message || "未能解析文件列表，确认后将整条磁力推送。";
     p115MagnetHint.textContent = `${folderText}。${extra}`;
     setP115MagnetStatus(data.parsed ? "" : extra, !data.parsed);
     p115MagnetConfirmBtn.disabled = false;
   } catch (err) {
     pendingP115Magnet.parsed = { magnet, parsed: false, files: [], info_hash: "" };
-    renderP115MagnetFiles(pendingP115Magnet.parsed);
+    renderP115MagnetFiles(pendingP115Magnet.parsed, { previewOnly: pushTarget === "cd2" });
     setP115MagnetStatus(err.message || "解析失败，仍可整条推送", true);
     p115MagnetConfirmBtn.disabled = false;
   }
@@ -1694,13 +1732,15 @@ async function openP115MagnetModal({ magnet = "", code = "", button = null } = {
 async function confirmP115MagnetPush() {
   if (!pendingP115Magnet?.magnet) return;
   const parsed = pendingP115Magnet.parsed || {};
+  const pushTarget = pendingP115Magnet.target || magnetPushTarget();
+  const label = magnetPushLabel(pushTarget);
   const wanted = selectedP115Indexes();
-  if (parsed.parsed && parsed.files?.length && !wanted.length) {
+  if (pushTarget === "p115" && parsed.parsed && parsed.files?.length && !wanted.length) {
     setP115MagnetStatus("请至少选择一个文件", true);
     return;
   }
   p115MagnetConfirmBtn.disabled = true;
-  setP115MagnetStatus("正在推送到 115...");
+  setP115MagnetStatus(`正在推送到 ${label}...`);
   const button = pendingP115Magnet.button;
   const original = button?.textContent;
   if (button) {
@@ -1708,6 +1748,23 @@ async function confirmP115MagnetPush() {
     button.textContent = "推送中...";
   }
   try {
+    if (pushTarget === "cd2") {
+      const magnet = pendingP115Magnet.magnet;
+      const code = pendingP115Magnet.code || "";
+      const success = await pushToOffline({ magnets: [magnet], code, button });
+      if (success) {
+        setP115MagnetStatus("推送完成");
+        closeP115MagnetModal();
+        setP115PasteStatus(`已推送到 CD2${currentOfflineFolderHint() ? ` → ${currentOfflineFolderHint()}` : ""}`);
+        return;
+      }
+      if (!pushFolderModal?.classList.contains("hidden")) {
+        closeP115MagnetModal();
+        setP115PasteStatus("请选择推送目录");
+        return;
+      }
+      throw new Error("推送未完成，请检查 CD2 令牌和推送目录");
+    }
     const res = await authFetch("/api/p115/magnet/push", {
       method: "POST",
       body: JSON.stringify({
@@ -1728,9 +1785,9 @@ async function confirmP115MagnetPush() {
   } catch (err) {
     const message = err.message || "推送失败";
     setP115MagnetStatus(message, true);
-    setStatus(`115 推送失败: ${message}`);
-    showToast(`115 推送失败：${message}`, { type: "error", timeout: 7200 });
-    if (button) button.textContent = original || "推送115";
+    setStatus(`${label} 推送失败: ${message}`);
+    showToast(`${label} 推送失败：${message}`, { type: "error", timeout: 7200 });
+    if (button) button.textContent = original || `推送${label}`;
   } finally {
     p115MagnetConfirmBtn.disabled = false;
     if (button) button.disabled = false;
@@ -1790,9 +1847,9 @@ async function ensureP115ParseReady() {
     openAuthModal("login");
     return false;
   }
-  if (p115Ready) return true;
+  if (p115TabReady()) return true;
   setP115PasteStatus(
-    "解析磁力需要 115 Cookie。请先到配置页填写 Cookie 并保存目录；若只想整条添加任务，请用「全部整条推送」。",
+    "解析后推送需要 CD2 令牌或 115 Cookie。请先到配置页填写；若只想整条添加任务，也可以先配好再点「全部整条推送」。",
     true
   );
   return false;
@@ -1877,18 +1934,23 @@ async function parsePastedP115Magnet(link) {
     setP115PasteStatus("请先粘贴磁力链接", true);
     return;
   }
+  const target = magnetPushTarget();
+  const label = magnetPushLabel(target);
   setP115PasteStatus("正在解析磁力文件列表...", false, true);
-  await openP115MagnetModal({ magnet });
+  await openP115MagnetModal({ magnet, target });
   const parsed = pendingP115Magnet?.parsed;
   if (parsed?.parsed) {
     const count = parsed.files?.length || 0;
+    const folder = magnetPushFolderText(target);
     setP115PasteStatus(
-      `已解析 ${count} 个文件${p115FolderPath ? `，确认后推送到 ${p115FolderPath}` : "，勾选文件后确认推送"}`
+      target === "cd2"
+        ? `已解析 ${count} 个文件，确认后整条推送到 ${label}`
+        : `已解析 ${count} 个文件，勾选后推送到 ${label}${folder ? `（${folder}）` : ""}`
     );
     return;
   }
   if (p115MagnetModal?.classList.contains("hidden")) {
-    setP115PasteStatus("未能打开解析窗口，请检查 115 Cookie", true);
+    setP115PasteStatus(`未能打开解析窗口，请检查 ${label} 是否已配置`, true);
     return;
   }
   setP115PasteStatus(
@@ -2467,6 +2529,7 @@ resultsEl.addEventListener("click", async (event) => {
       magnet: push115Btn.dataset.link || "",
       code: push115Btn.dataset.code || "",
       button: push115Btn,
+      target: "p115",
     });
     return;
   }
@@ -2477,6 +2540,7 @@ resultsEl.addEventListener("click", async (event) => {
     await openP115MagnetModal({
       code: push115BestBtn.dataset.code,
       button: push115BestBtn,
+      target: "p115",
     });
     return;
   }
@@ -2484,7 +2548,7 @@ resultsEl.addEventListener("click", async (event) => {
   const pushBtn = event.target.closest(".push-btn");
   if (pushBtn) {
     if (pushBackend === "p115") {
-      await openP115MagnetModal({ magnet: pushBtn.dataset.link || "", button: pushBtn });
+      await openP115MagnetModal({ magnet: pushBtn.dataset.link || "", button: pushBtn, target: "p115" });
       return;
     }
     await pushToOffline({ magnets: [pushBtn.dataset.link], button: pushBtn });
@@ -2499,6 +2563,7 @@ resultsEl.addEventListener("click", async (event) => {
         magnet: pushBestBtn.dataset.link || "",
         code: pushBestBtn.dataset.code || "",
         button: pushBestBtn,
+        target: "p115",
       });
       return;
     }
