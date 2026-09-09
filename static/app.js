@@ -2118,7 +2118,9 @@ const p115ParseBtn = document.getElementById("p115ParseBtn");
 const p115PushAllBtn = document.getElementById("p115PushAllBtn");
 const p115PasteStatus = document.getElementById("p115PasteStatus");
 const p115PasteList = document.getElementById("p115PasteList");
-const OFFLINE_LINK_RE = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*|ed2k:\/\/\|file\|[^\s"'<>]+/gi;
+const MAGNET_LINK_RE = /magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^\s"'<>]*/gi;
+const ED2K_LINK_RE = /ed2k:\/\/\|file\|[^|\r\n]+\|\d+\|[0-9A-Fa-f]{32}\|[^\s"'<>]*/gi;
+const OFFLINE_LINK_RE = new RegExp(`${MAGNET_LINK_RE.source}|${ED2K_LINK_RE.source}`, "gi");
 
 function setP115PasteStatus(message, isError = false, loading = false) {
   if (!p115PasteStatus) return;
@@ -2192,6 +2194,12 @@ function extractMagnetLinks(text) {
       links.push(link);
     }
     match = matcher.exec(source);
+  }
+  if (!links.length) {
+    const raw = source.trim().replace(/[.,;]+$/, "");
+    if (/^magnet:\?xt=urn:btih:/i.test(raw) || /^ed2k:\/\/\|file\|/i.test(raw)) {
+      links.push(raw);
+    }
   }
   return links;
 }
