@@ -7,6 +7,7 @@ from app.auth import create_access_token, decode_access_token
 from app.config import settings
 from app.routes.api import _cover_url_allowed
 from app.subtitles.providers import avsubtitles, subtitlecat
+from app.subtitles.providers.site import require_site_url
 
 
 @pytest.mark.parametrize(
@@ -42,10 +43,10 @@ def test_cover_proxy_blocks_other_addresses(url):
     ],
 )
 def test_subtitle_download_only_allows_its_own_site(provider, good):
-    provider._require_site_url(good)
+    require_site_url(good, provider.BASE_URL, "字幕站")
     for bad in ("http://192.168.1.135:18000/api/health", "https://example.com/a.srt", ""):
         with pytest.raises(ValueError):
-            provider._require_site_url(bad)
+            require_site_url(bad, provider.BASE_URL, "字幕站")
 
 
 def test_access_token_round_trip_and_expiry():

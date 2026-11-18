@@ -241,18 +241,6 @@ function renderFolderList(data) {
     .join("");
 }
 
-function escapeHtml(text) {
-  return String(text)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
-function escapeAttr(text) {
-  return escapeHtml(text).replaceAll("'", "&#39;");
-}
-
 async function loadFolderList(path = "/") {
   setFolderModalStatus("正在加载目录...");
   const res = await authFetch("/api/cd2/folders", {

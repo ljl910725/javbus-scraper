@@ -31,6 +31,9 @@ from app.scraper.parser import (
 )
 
 
+BATCH_CONCURRENCY = 3
+
+
 class ScrapeError(Exception):
     pass
 
@@ -270,26 +273,35 @@ async def scrape_movies_batch(
     client = get_client(user_settings)
     results: list[MovieInfo] = []
     errors: list[tuple[str, str]] = []
+    pending = [(code, normalize_code(code)) for code in codes]
+    pending = [(code, normalized) for code, normalized in pending if normalized]
 
-    for index, code in enumerate(codes):
-        normalized = normalize_code(code)
-        if not normalized:
-            continue
+    # 每批同时查 BATCH_CONCURRENCY 个，批与批之间仍隔 request_delay，避免请求太密被 JavBus 拦
+    for start in range(0, len(pending), BATCH_CONCURRENCY):
+        batch = pending[start : start + BATCH_CONCURRENCY]
+        outcomes = await asyncio.gather(
+            *(
+                scrape_movie(
+                    normalized,
+                    download_cover=download_cover,
+                    client=client,
+                    user_settings=user_settings,
+                )
+                for _, normalized in batch
+            ),
+            return_exceptions=True,
+        )
 
-        try:
-            movie = await scrape_movie(
-                normalized,
-                download_cover=download_cover,
-                client=client,
-                user_settings=user_settings,
-            )
-            results.append(movie)
-        except ScrapeError as exc:
-            errors.append((code.strip(), str(exc)))
-        except Exception as exc:
-            errors.append((code.strip(), f"请求失败: {exc}"))
+        # 按输入顺序收结果，前端列表顺序和以前一样
+        for (code, _), outcome in zip(batch, outcomes):
+            if isinstance(outcome, MovieInfo):
+                results.append(outcome)
+            elif isinstance(outcome, ScrapeError):
+                errors.append((code.strip(), str(outcome)))
+            else:
+                errors.append((code.strip(), f"请求失败: {outcome}"))
 
-        if index < len(codes) - 1:
+        if start + BATCH_CONCURRENCY < len(pending):
             await asyncio.sleep(settings.request_delay)
 
     return results, errors

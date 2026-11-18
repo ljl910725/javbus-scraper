@@ -37,7 +37,7 @@ function expireSession() {
   if (typeof showToast === "function") {
     showToast("登录已过期，请重新登录", { type: "error", timeout: 6000 });
   }
-  if (typeof openAuthModal === "function") openAuthModal("login");
+  if (typeof openAuthModal === "function") openAuthModal();
 }
 
 async function ensureSession() {

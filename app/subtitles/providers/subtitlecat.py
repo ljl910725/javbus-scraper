@@ -2,12 +2,13 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from urllib.parse import unquote, urljoin, urlsplit
+from urllib.parse import unquote, urljoin
 
 from bs4 import BeautifulSoup
 
 from app.scraper.client import JavBusClient
 from app.subtitles.providers.avsubtitles import LANGUAGE_LABELS, normalize_subtitle_code
+from app.subtitles.providers.site import require_site_url
 
 BASE_URL = "https://www.subtitlecat.com"
 PREFERRED_LANGS = {"zh", "zh-cn", "zh-tw", "en", "ko", "ja", "th"}
@@ -37,15 +38,6 @@ def _absolute(path: str) -> str:
     if path.startswith("//"):
         return f"https:{path}"
     return urljoin(f"{BASE_URL}/", path.lstrip("/"))
-
-
-def _require_site_url(url: str) -> None:
-    # 字幕地址由浏览器传上来，只认本站，防止别人借接口读内网页面
-    parts = urlsplit(url or "")
-    host = (parts.hostname or "").lower()
-    site = (urlsplit(BASE_URL).hostname or "").removeprefix("www.")
-    if parts.scheme not in {"http", "https"} or not (host == site or host.endswith(f".{site}")):
-        raise ValueError("字幕地址不是 subtitlecat 的网址")
 
 
 def _language_label(code: str) -> str:
@@ -185,7 +177,7 @@ async def download_subtitlecat(
 ) -> tuple[bytes, str]:
     if not detail_url:
         raise ValueError("缺少字幕下载地址")
-    _require_site_url(detail_url)
+    require_site_url(detail_url, BASE_URL, "subtitlecat")
 
     response = await client.get(detail_url, referer=BASE_URL)
     content = response.content

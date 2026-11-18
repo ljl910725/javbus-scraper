@@ -3,15 +3,6 @@ const historySection = document.getElementById("historySection");
 const pushHistoryList = document.getElementById("pushHistoryList");
 const refreshPushHistoryBtn = document.getElementById("refreshPushHistoryBtn");
 
-function escapeHtml(text) {
-  // 结果也会放进 data-code="..." 属性里，双引号必须转义
-  return String(text ?? "")
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
-}
-
 function formatHistoryTime(value) {
   if (!value) return "";
   return value.replace("T", " ").slice(0, 19);

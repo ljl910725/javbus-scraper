@@ -2,7 +2,6 @@ const nosubAddFolderBtn = document.getElementById("nosubAddFolderBtn");
 const nosubClearFoldersBtn = document.getElementById("nosubClearFoldersBtn");
 const nosubScanBtn = document.getElementById("nosubScanBtn");
 const nosubCancelBtn = document.getElementById("nosubCancelBtn");
-const nosubSelectedFoldersEl = document.getElementById("nosubSelectedFolders");
 const nosubStatusEl = document.getElementById("nosubStatus");
 const nosubResultsEl = document.getElementById("nosubResults");
 const nosubProgressEl = document.getElementById("nosubProgress");
@@ -17,13 +16,6 @@ const nosubReplaceLiveFill = document.getElementById("nosubReplaceLiveFill");
 const nosubReplaceLiveText = document.getElementById("nosubReplaceLiveText");
 const nosubReplaceLivePath = document.getElementById("nosubReplaceLivePath");
 const nosubReplaceLiveList = document.getElementById("nosubReplaceLiveList");
-const nosubFolderModal = document.getElementById("nosubFolderModal");
-const nosubFolderList = document.getElementById("nosubFolderList");
-const nosubFolderCurrentPath = document.getElementById("nosubFolderCurrentPath");
-const nosubFolderUpBtn = document.getElementById("nosubFolderUpBtn");
-const nosubFolderAddCurrentBtn = document.getElementById("nosubFolderAddCurrentBtn");
-const nosubFolderModalStatus = document.getElementById("nosubFolderModalStatus");
-const closeNosubFolderModalBtn = document.getElementById("closeNosubFolderModalBtn");
 const nosubLookupModal = document.getElementById("nosubLookupModal");
 const nosubLookupTitle = document.getElementById("nosubLookupTitle");
 const nosubLookupHint = document.getElementById("nosubLookupHint");
@@ -55,9 +47,6 @@ const nosubIgnoredStatusEl = document.getElementById("nosubIgnoredStatus");
 const nosubIgnoredResultsEl = document.getElementById("nosubIgnoredResults");
 
 const NOSUB_PAGE_SIZES = [10, 20, 50, 100];
-let nosubSelectedFolders = [];
-let nosubBrowsePath = "";
-let nosubBrowseParent = null;
 let nosubScanData = null;
 let nosubAbort = null;
 let pendingNosubItem = null;
@@ -73,6 +62,14 @@ let nosubReplaceLiveJob = null;
 let nosubReplaceLiveState = null;
 let nosubReplaceReportJob = null;
 let nosubReplaceReportFilter = "all";
+
+// 选择文件夹的弹窗和已选列表由 folder-picker.js 统一处理
+const nosubFolderPicker = createFolderPicker({
+  prefix: "nosub",
+  pickText: "加入排查",
+  loginMessage: "排查无字幕文件需要先登录",
+  setPageStatus: (message, isError) => setNosubStatus(message, isError),
+});
 
 function nosubPushLabel() {
   if (typeof pushBackend === "string" && pushBackend === "cd2") return "CD2";
@@ -122,117 +119,12 @@ function setNosubStatus(message, isError = false, loading = false) {
   nosubStatusEl.classList.toggle("loading", Boolean(loading));
 }
 
-function setNosubFolderStatus(message, isError = false) {
-  if (!nosubFolderModalStatus) return;
-  nosubFolderModalStatus.textContent = message || "";
-  nosubFolderModalStatus.classList.toggle("errors", Boolean(isError));
-}
-
 function setNosubLookupStatus(message, isError = false, loading = false) {
   if (!nosubLookupStatusEl) return;
   nosubLookupStatusEl.textContent = message || "";
   nosubLookupStatusEl.classList.toggle("hidden", !message);
   nosubLookupStatusEl.classList.toggle("errors", Boolean(isError));
   nosubLookupStatusEl.classList.toggle("loading", Boolean(loading));
-}
-
-function nosubFolderAlreadySelected(path) {
-  return nosubSelectedFolders.some((item) => item.path === path);
-}
-
-function renderNosubSelectedFolders() {
-  if (!nosubSelectedFoldersEl) return;
-  if (!nosubSelectedFolders.length) {
-    nosubSelectedFoldersEl.innerHTML = '<span class="field-hint">尚未选择文件夹</span>';
-    return;
-  }
-  nosubSelectedFoldersEl.innerHTML = nosubSelectedFolders
-    .map(
-      (folder) => `
-      <div class="dup-chip" title="${escapeAttr(folder.path)}">
-        <span>${escapeHtml(folder.name)}</span>
-        <button type="button" data-remove-path="${escapeAttr(folder.path)}" aria-label="移除">×</button>
-      </div>`
-    )
-    .join("");
-}
-
-function addNosubFolder(path, name) {
-  const folderPath = (path || "").trim();
-  if (!folderPath) {
-    setNosubFolderStatus("当前位置不能添加，请进入具体目录", true);
-    return;
-  }
-  if (nosubFolderAlreadySelected(folderPath)) {
-    setNosubFolderStatus("该文件夹已在列表中");
-    return;
-  }
-  nosubSelectedFolders.push({
-    path: folderPath,
-    name: name || folderPath.split("/").filter(Boolean).pop() || folderPath,
-  });
-  renderNosubSelectedFolders();
-  setNosubFolderStatus(`已添加：${name || folderPath}`);
-}
-
-function renderNosubFolderList(data) {
-  nosubBrowsePath = data.current_path || "";
-  nosubBrowseParent = data.parent_path ?? null;
-  nosubFolderCurrentPath.textContent = nosubBrowsePath || "挂载根目录";
-  nosubFolderUpBtn.disabled = nosubBrowseParent === null;
-  nosubFolderAddCurrentBtn.disabled = !data.selectable || !nosubBrowsePath;
-
-  const folders = data.folders || [];
-  if (!folders.length) {
-    nosubFolderList.innerHTML = '<p class="folder-empty">当前目录没有子文件夹</p>';
-    return;
-  }
-
-  nosubFolderList.innerHTML = folders
-    .map(
-      (folder) => `
-      <div class="folder-item">
-        <div class="folder-item-main">
-          <strong>📁 ${escapeHtml(folder.name)}</strong>
-        </div>
-        <div class="folder-item-path">${escapeHtml(folder.path)}</div>
-        <div class="folder-item-actions">
-          <button class="ghost-btn nosub-open-btn" type="button" data-path="${escapeAttr(folder.path)}">进入</button>
-          <button class="ghost-btn nosub-pick-btn" type="button" data-path="${escapeAttr(folder.path)}" data-name="${escapeAttr(folder.name)}">加入排查</button>
-        </div>
-      </div>`
-    )
-    .join("");
-}
-
-async function loadNosubFolders(path = "") {
-  setNosubFolderStatus("正在加载目录...");
-  const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  const res = await authFetch(`/api/subtitles/browse${query}`);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    setNosubFolderStatus(data.detail || "加载目录失败", true);
-    nosubFolderList.innerHTML = "";
-    return;
-  }
-  renderNosubFolderList(data);
-  setNosubFolderStatus("");
-}
-
-function openNosubFolderModal() {
-  if (!isLoggedIn()) {
-    setNosubStatus("排查无字幕文件需要先登录", true);
-    openAuthModal("login");
-    return;
-  }
-  bringModalToFront(nosubFolderModal);
-  nosubFolderModal.classList.remove("hidden");
-  loadNosubFolders(nosubBrowsePath);
-}
-
-function closeNosubFolderModal() {
-  nosubFolderModal.classList.add("hidden");
-  setNosubFolderStatus("");
 }
 
 function nosubImageUrl(path) {
@@ -356,10 +248,10 @@ async function scanMissingSubs(page = 1, { reset = false } = {}) {
   }
   if (!isLoggedIn()) {
     setNosubStatus("排查无字幕文件需要先登录", true);
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
-  if (!nosubSelectedFolders.length) {
+  if (!nosubFolderPicker.folders.length) {
     setNosubStatus("请先选择至少一个文件夹", true);
     return;
   }
@@ -395,8 +287,8 @@ async function scanMissingSubs(page = 1, { reset = false } = {}) {
     videos: 0,
     dirs: 0,
     folder_index: 0,
-    folder_total: nosubSelectedFolders.length,
-    current_dir: nosubSelectedFolders[0]?.path || "",
+    folder_total: nosubFolderPicker.folders.length,
+    current_dir: nosubFolderPicker.folders[0]?.path || "",
     found: offset,
     page_found: 0,
     percent: 0,
@@ -405,7 +297,7 @@ async function scanMissingSubs(page = 1, { reset = false } = {}) {
     const res = await authFetch("/api/missing-subs/scan/stream", {
       method: "POST",
       body: JSON.stringify({
-        folders: nosubSelectedFolders.map((item) => item.path),
+        folders: nosubFolderPicker.folders.map((item) => item.path),
         limit: nosubPageSize,
         offset,
       }),
@@ -509,7 +401,7 @@ function removeNosubItemFromView(path) {
 
 async function deleteNosubFile(button, path, name) {
   if (!isLoggedIn()) {
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
   const ok = await showAppConfirm({
@@ -547,7 +439,7 @@ async function deleteNosubFile(button, path, name) {
 
 async function ignoreNosubFile(button, item) {
   if (!isLoggedIn()) {
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
   if (!item?.path) return;
@@ -677,7 +569,7 @@ function renderNosubIgnoredList(items) {
 async function loadNosubIgnoredList() {
   if (!isLoggedIn()) {
     setNosubIgnoredStatus("查看忽略列表需要先登录", true);
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
   setNosubIgnoredStatus("正在加载忽略列表...", false, true);
@@ -716,7 +608,7 @@ async function unignoreNosubItem(button, itemId) {
 
 async function checkNosubIgnored(button, itemId = null) {
   if (!isLoggedIn()) {
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
   if (button) button.disabled = true;
@@ -1133,7 +1025,7 @@ function renderNosubReplaceLogs(jobs) {
 async function loadNosubReplaceLogs() {
   if (!isLoggedIn()) {
     setNosubLogsStatus("查看执行记录需要先登录", true);
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
   setNosubLogsStatus("正在加载执行记录...", false, true);
@@ -1184,7 +1076,7 @@ function resetNosubReplaceLive() {
     status: "running",
     title: "一键替换进行中",
     text: "正在扫描无字幕文件...",
-    path: nosubSelectedFolders[0]?.path || "",
+    path: nosubFolderPicker.folders[0]?.path || "",
     total: 0,
     index: 0,
     scanned: 0,
@@ -1293,10 +1185,10 @@ function setNosubReplaceBusy(busy) {
 
 async function runNosubReplace() {
   if (!isLoggedIn()) {
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
-  if (!nosubSelectedFolders.length) {
+  if (!nosubFolderPicker.folders.length) {
     setNosubStatus("请先选择文件夹", true);
     return;
   }
@@ -1304,7 +1196,7 @@ async function runNosubReplace() {
     showToast("还没有配置可用的推送方式，请先在设置页配置 CD2 或 115", { type: "error" });
     return;
   }
-  const folderNames = nosubSelectedFolders.map((item) => item.name || item.path).join("、");
+  const folderNames = nosubFolderPicker.folders.map((item) => item.name || item.path).join("、");
   const ok = await showAppConfirm({
     title: "一键替换无字幕文件",
     message: `将扫描这些目录里所有没有字幕的视频：\n${folderNames}\n\n扫到一个就会马上查询字幕并推送到 ${nosubPushLabel()}。忽略列表里的文件会跳过；没找到字幕的会加入忽略列表。同一文件夹 5 分钟内不能再执行一次。`,
@@ -1326,7 +1218,7 @@ async function runNosubReplace() {
     const res = await authFetch("/api/missing-subs/replace/stream", {
       method: "POST",
       body: JSON.stringify({
-        folders: nosubSelectedFolders.map((item) => item.path),
+        folders: nosubFolderPicker.folders.map((item) => item.path),
       }),
       signal: nosubAbort.signal,
     });
@@ -1488,11 +1380,9 @@ function afterNosubPushSuccess() {
   };
 }
 
-nosubAddFolderBtn?.addEventListener("click", openNosubFolderModal);
 nosubClearFoldersBtn?.addEventListener("click", () => {
-  nosubSelectedFolders = [];
+  nosubFolderPicker.clear();
   clearNosubPages();
-  renderNosubSelectedFolders();
   nosubResultsEl.innerHTML = "";
   renderNosubPager();
   setNosubStatus("");
@@ -1549,7 +1439,7 @@ nosubReplaceLiveEl?.addEventListener("click", (event) => {
 });
 nosubPageSizeSelect?.addEventListener("change", () => {
   nosubPageSize = currentNosubPageSize();
-  if (!nosubSelectedFolders.length) return;
+  if (!nosubFolderPicker.folders.length) return;
   if (nosubScanData || nosubPageCache.size) {
     scanMissingSubs(1, { reset: true });
   }
@@ -1566,38 +1456,9 @@ nosubPagerEl?.addEventListener("click", (event) => {
 nosubCancelBtn?.addEventListener("click", () => {
   nosubAbort?.abort();
 });
-closeNosubFolderModalBtn?.addEventListener("click", closeNosubFolderModal);
 closeNosubLookupModalBtn?.addEventListener("click", closeNosubLookupModal);
 nosubLookupIgnoreBtn?.addEventListener("click", (event) => {
   if (pendingNosubItem) ignoreNosubFile(event.currentTarget, pendingNosubItem);
-});
-nosubFolderUpBtn?.addEventListener("click", () => {
-  if (nosubBrowseParent === null) return;
-  loadNosubFolders(nosubBrowseParent);
-});
-nosubFolderAddCurrentBtn?.addEventListener("click", () => {
-  const name = nosubBrowsePath.split("/").filter(Boolean).pop() || nosubBrowsePath;
-  addNosubFolder(nosubBrowsePath, name);
-});
-
-nosubFolderList?.addEventListener("click", (event) => {
-  const openBtn = event.target.closest(".nosub-open-btn");
-  if (openBtn) {
-    loadNosubFolders(openBtn.dataset.path || "");
-    return;
-  }
-  const pickBtn = event.target.closest(".nosub-pick-btn");
-  if (pickBtn) {
-    addNosubFolder(pickBtn.dataset.path || "", pickBtn.dataset.name || "");
-  }
-});
-
-nosubSelectedFoldersEl?.addEventListener("click", (event) => {
-  const removeBtn = event.target.closest("[data-remove-path]");
-  if (!removeBtn) return;
-  const path = removeBtn.dataset.removePath;
-  nosubSelectedFolders = nosubSelectedFolders.filter((item) => item.path !== path);
-  renderNosubSelectedFolders();
 });
 
 nosubResultsEl?.addEventListener("click", (event) => {
@@ -1816,9 +1677,6 @@ nosubLookupResults?.addEventListener("click", async (event) => {
   }
 });
 
-nosubFolderModal?.addEventListener("click", (event) => {
-  if (event.target === nosubFolderModal) closeNosubFolderModal();
-});
 nosubLookupModal?.addEventListener("click", (event) => {
   if (event.target === nosubLookupModal) closeNosubLookupModal();
 });
@@ -1851,4 +1709,3 @@ nosubIgnoredResultsEl?.addEventListener("click", (event) => {
   }
 });
 
-renderNosubSelectedFolders();

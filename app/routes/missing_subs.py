@@ -29,6 +29,7 @@ from app.models import (
     NosubReplaceRequest,
 )
 from app.replace_job import FolderLockBusy, release_folder_locks, run_replace_job_events, try_acquire_folder_locks
+from app.routes.streaming import stream_thread_events
 from app.subtitles.storage import resolve_file
 
 router = APIRouter(prefix="/api/missing-subs")
@@ -39,59 +40,25 @@ async def scan_missing_subs_stream(body: MissingSubScanRequest, request: Request
     if not body.folders:
         raise HTTPException(status_code=400, detail="请至少选择一个文件夹")
 
-    loop = asyncio.get_running_loop()
-    queue: asyncio.Queue[dict | None] = asyncio.Queue()
-    stop = threading.Event()
     ignored_paths = db.scan_skip_paths(user["id"])
 
-    def worker() -> None:
-        try:
-            for event in iter_scan_missing_subs(
-                body.folders,
-                stop=stop,
-                limit=body.limit,
-                offset=body.offset,
-                ignored_paths=ignored_paths,
-            ):
-                loop.call_soon_threadsafe(queue.put_nowait, event)
-        except ValueError as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": str(exc)})
-        except Exception as exc:
-            loop.call_soon_threadsafe(queue.put_nowait, {"type": "error", "message": f"排查失败: {exc}"})
-        finally:
-            loop.call_soon_threadsafe(queue.put_nowait, None)
+    def remember_known_subtitles(event: dict) -> None:
+        # 扫完后把带字幕的文件记下来，下次扫描直接跳过；这份清单不用发给浏览器
+        if event.get("type") == "done":
+            result = event.get("result") or {}
+            db.add_known_subtitle_files(user["id"], result.pop("known_subtitles", None) or [])
 
-    loop.run_in_executor(None, worker)
-
-    async def event_gen():
-        try:
-            while True:
-                if await request.is_disconnected():
-                    stop.set()
-                    break
-                try:
-                    event = await asyncio.wait_for(queue.get(), timeout=0.4)
-                except asyncio.TimeoutError:
-                    continue
-                if event is None:
-                    break
-                if event.get("type") == "done":
-                    result = event.get("result") or {}
-                    db.add_known_subtitle_files(user["id"], result.pop("known_subtitles", None) or [])
-                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
-                if event.get("type") in {"done", "error", "cancelled"}:
-                    break
-        finally:
-            stop.set()
-
-    return StreamingResponse(
-        event_gen(),
-        media_type="text/event-stream",
-        headers={
-            "Cache-Control": "no-cache",
-            "Connection": "keep-alive",
-            "X-Accel-Buffering": "no",
-        },
+    return stream_thread_events(
+        request,
+        lambda stop: iter_scan_missing_subs(
+            body.folders,
+            stop=stop,
+            limit=body.limit,
+            offset=body.offset,
+            ignored_paths=ignored_paths,
+        ),
+        error_prefix="排查失败",
+        before_send=remember_known_subtitles,
     )
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 from app.config import settings
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
-# 全项目共用这一份视频格式，前端 app.js 的 P115_VIDEO_EXTS 要跟它保持一致
+# 全项目共用这一份视频格式，前端 static/home/magnet-modal.js 的 P115_VIDEO_EXTS 要跟它保持一致
 VIDEO_EXTENSIONS = {
     ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
     ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",

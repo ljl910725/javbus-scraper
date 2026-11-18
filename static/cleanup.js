@@ -3,7 +3,6 @@ const cleanupClearFoldersBtn = document.getElementById("cleanupClearFoldersBtn")
 const cleanupScanBtn = document.getElementById("cleanupScanBtn");
 const cleanupRunBtn = document.getElementById("cleanupRunBtn");
 const cleanupCancelBtn = document.getElementById("cleanupCancelBtn");
-const cleanupSelectedFoldersEl = document.getElementById("cleanupSelectedFolders");
 const cleanupHintEl = document.getElementById("cleanupHint");
 const cleanupDeleteHtmlInput = document.getElementById("cleanupDeleteHtml");
 const cleanupDeleteTxtInput = document.getElementById("cleanupDeleteTxt");
@@ -16,13 +15,6 @@ const cleanupProgressEl = document.getElementById("cleanupProgress");
 const cleanupProgressFill = document.getElementById("cleanupProgressFill");
 const cleanupProgressText = document.getElementById("cleanupProgressText");
 const cleanupProgressPath = document.getElementById("cleanupProgressPath");
-const cleanupFolderModal = document.getElementById("cleanupFolderModal");
-const cleanupFolderList = document.getElementById("cleanupFolderList");
-const cleanupFolderCurrentPath = document.getElementById("cleanupFolderCurrentPath");
-const cleanupFolderUpBtn = document.getElementById("cleanupFolderUpBtn");
-const cleanupFolderAddCurrentBtn = document.getElementById("cleanupFolderAddCurrentBtn");
-const cleanupFolderModalStatus = document.getElementById("cleanupFolderModalStatus");
-const closeCleanupFolderModalBtn = document.getElementById("closeCleanupFolderModalBtn");
 
 const CLEANUP_REASON_LABELS = {
   html: "HTML",
@@ -40,14 +32,22 @@ const DEFAULT_CLEANUP_RULES = {
   extra_exts: "",
 };
 
-let cleanupSelectedFolders = [];
-let cleanupBrowsePath = "";
-let cleanupBrowseParent = null;
 let cleanupScanData = null;
 let cleanupAbort = null;
 let cleanupBusy = false;
 let cleanupRulesApplying = false;
 let cleanupRulesSaveTimer = 0;
+
+// 选择文件夹的弹窗和已选列表由 folder-picker.js 统一处理
+const cleanupFolderPicker = createFolderPicker({
+  prefix: "cleanup",
+  pickText: "加入清理",
+  loginMessage: "清理垃圾文件需要先登录",
+  setPageStatus: (message, isError) => setCleanupStatus(message, isError),
+  onChange: () => {
+    cleanupScanData = null;
+  },
+});
 
 function setCleanupStatus(message, isError = false, loading = false) {
   if (!cleanupStatusEl) return;
@@ -55,111 +55,6 @@ function setCleanupStatus(message, isError = false, loading = false) {
   cleanupStatusEl.classList.toggle("hidden", !message);
   cleanupStatusEl.classList.toggle("errors", Boolean(isError));
   cleanupStatusEl.classList.toggle("loading", Boolean(loading));
-}
-
-function setCleanupFolderStatus(message, isError = false) {
-  if (!cleanupFolderModalStatus) return;
-  cleanupFolderModalStatus.textContent = message || "";
-  cleanupFolderModalStatus.classList.toggle("errors", Boolean(isError));
-}
-
-function cleanupFolderAlreadySelected(path) {
-  return cleanupSelectedFolders.some((item) => item.path === path);
-}
-
-function renderCleanupSelectedFolders() {
-  if (!cleanupSelectedFoldersEl) return;
-  if (!cleanupSelectedFolders.length) {
-    cleanupSelectedFoldersEl.innerHTML = '<span class="field-hint">尚未选择文件夹</span>';
-    return;
-  }
-  cleanupSelectedFoldersEl.innerHTML = cleanupSelectedFolders
-    .map(
-      (folder) => `
-      <div class="dup-chip" title="${escapeAttr(folder.path)}">
-        <span>${escapeHtml(folder.name)}</span>
-        <button type="button" data-remove-path="${escapeAttr(folder.path)}" aria-label="移除">×</button>
-      </div>`
-    )
-    .join("");
-}
-
-function addCleanupFolder(path, name) {
-  const folderPath = (path || "").trim();
-  if (!folderPath) {
-    setCleanupFolderStatus("当前位置不能添加，请进入具体目录", true);
-    return;
-  }
-  if (cleanupFolderAlreadySelected(folderPath)) {
-    setCleanupFolderStatus("该文件夹已在列表中");
-    return;
-  }
-  cleanupSelectedFolders.push({
-    path: folderPath,
-    name: name || folderPath.split("/").filter(Boolean).pop() || folderPath,
-  });
-  renderCleanupSelectedFolders();
-  cleanupScanData = null;
-  setCleanupFolderStatus(`已添加：${name || folderPath}`);
-}
-
-function renderCleanupFolderList(data) {
-  cleanupBrowsePath = data.current_path || "";
-  cleanupBrowseParent = data.parent_path ?? null;
-  cleanupFolderCurrentPath.textContent = cleanupBrowsePath || "挂载根目录";
-  cleanupFolderUpBtn.disabled = cleanupBrowseParent === null;
-  cleanupFolderAddCurrentBtn.disabled = !data.selectable || !cleanupBrowsePath;
-
-  const folders = data.folders || [];
-  if (!folders.length) {
-    cleanupFolderList.innerHTML = '<p class="folder-empty">当前目录没有子文件夹</p>';
-    return;
-  }
-
-  cleanupFolderList.innerHTML = folders
-    .map(
-      (folder) => `
-      <div class="folder-item">
-        <div class="folder-item-main">
-          <strong>📁 ${escapeHtml(folder.name)}</strong>
-        </div>
-        <div class="folder-item-path">${escapeHtml(folder.path)}</div>
-        <div class="folder-item-actions">
-          <button class="ghost-btn cleanup-open-btn" type="button" data-path="${escapeAttr(folder.path)}">进入</button>
-          <button class="ghost-btn cleanup-pick-btn" type="button" data-path="${escapeAttr(folder.path)}" data-name="${escapeAttr(folder.name)}">加入清理</button>
-        </div>
-      </div>`
-    )
-    .join("");
-}
-
-async function loadCleanupFolders(path = "") {
-  setCleanupFolderStatus("正在加载目录...");
-  const query = path ? `?path=${encodeURIComponent(path)}` : "";
-  const res = await authFetch(`/api/subtitles/browse${query}`);
-  const data = await res.json().catch(() => ({}));
-  if (!res.ok) {
-    setCleanupFolderStatus(data.detail || "加载目录失败", true);
-    cleanupFolderList.innerHTML = "";
-    return;
-  }
-  renderCleanupFolderList(data);
-  setCleanupFolderStatus("");
-}
-
-function openCleanupFolderModal() {
-  if (!isLoggedIn()) {
-    setCleanupStatus("清理垃圾文件需要先登录", true);
-    openAuthModal("login");
-    return;
-  }
-  cleanupFolderModal.classList.remove("hidden");
-  loadCleanupFolders(cleanupBrowsePath);
-}
-
-function closeCleanupFolderModal() {
-  cleanupFolderModal.classList.add("hidden");
-  setCleanupFolderStatus("");
 }
 
 function clampCleanupSmallVideoMb(value) {
@@ -305,23 +200,13 @@ function cleanupRequestBody() {
   persistCleanupRulesLocal(rules);
   saveCleanupRulesRemote(rules);
   return {
-    folders: cleanupSelectedFolders.map((item) => item.path),
+    folders: cleanupFolderPicker.folders.map((item) => item.path),
     extra_exts: rules.extra_exts,
     delete_html: rules.delete_html,
     delete_txt: rules.delete_txt,
     delete_small_video: rules.delete_small_video,
     small_video_mb: rules.small_video_mb,
   };
-}
-
-function formatCleanupSize(size) {
-  if (typeof formatDupSize === "function") return formatDupSize(size);
-  const value = Number(size);
-  if (!Number.isFinite(value) || value <= 0) return "0 B";
-  if (value < 1024) return `${value} B`;
-  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
-  if (value < 1024 * 1024 * 1024) return `${(value / (1024 * 1024)).toFixed(1)} MB`;
-  return `${(value / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
 
 function cleanupCountSummary(counts = {}) {
@@ -346,7 +231,7 @@ function renderCleanupResults(data, { ran = false } = {}) {
     ["小视频", counts.small_video || 0],
     ["额外后缀", counts.extra || 0],
     [ran ? "已删空目录" : "空子目录", ran ? data.deleted_dirs ?? 0 : data.empty_dir_count || 0],
-    [ran ? "已释放" : "约占用", formatCleanupSize(data.bytes || 0)],
+    [ran ? "已释放" : "约占用", formatBytes(data.bytes || 0) || "0 B"],
   ];
 
   const files = data.files || [];
@@ -382,7 +267,7 @@ function renderCleanupResults(data, { ran = false } = {}) {
       files.length
         ? `<section class="cleanup-file-list"><h3>文件样例 ${files.length} 个</h3>${files
             .map((file) => {
-              const sizeText = formatCleanupSize(file.size);
+              const sizeText = formatBytes(file.size);
               const reason = CLEANUP_REASON_LABELS[file.reason] || file.reason || "";
               return `
                 <div class="dup-file">
@@ -471,10 +356,10 @@ function showCleanupProgress(event) {
 async function runCleanupStream(url, { confirmMessage, successPrefix }) {
   if (!isLoggedIn()) {
     setCleanupStatus("清理垃圾文件需要先登录", true);
-    openAuthModal("login");
+    openAuthModal();
     return;
   }
-  if (!cleanupSelectedFolders.length) {
+  if (!cleanupFolderPicker.folders.length) {
     setCleanupStatus("请先选择至少一个文件夹", true);
     return;
   }
@@ -493,8 +378,8 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
     matched: 0,
     dirs: 0,
     folder_index: 0,
-    folder_total: cleanupSelectedFolders.length,
-    current_dir: cleanupSelectedFolders[0]?.path || "",
+    folder_total: cleanupFolderPicker.folders.length,
+    current_dir: cleanupFolderPicker.folders[0]?.path || "",
     percent: 0,
   });
   let lastProgress = null;
@@ -538,7 +423,7 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
       hideCleanupProgress();
       if (finalResult && (finalResult.deleted_files || finalResult.deleted_dirs)) {
         setCleanupStatus(
-          `已取消，已删除 ${finalResult.deleted_files || 0} 个文件、${finalResult.deleted_dirs || 0} 个空子文件夹，释放 ${formatCleanupSize(finalResult.bytes || 0)}`
+          `已取消，已删除 ${finalResult.deleted_files || 0} 个文件、${finalResult.deleted_dirs || 0} 个空子文件夹，释放 ${formatBytes(finalResult.bytes || 0) || "0 B"}`
         );
         renderCleanupResults(finalResult, { ran: true });
       } else {
@@ -557,12 +442,12 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
     if (ran) {
       const failNote = finalResult.failed_count ? `，失败 ${finalResult.failed_count} 项` : "";
       setCleanupStatus(
-        `${successPrefix}删除 ${finalResult.deleted_files || 0} 个文件、${finalResult.deleted_dirs || 0} 个空子文件夹，释放 ${formatCleanupSize(finalResult.bytes || 0)}（${cleanupCountSummary(finalResult.counts)}）${failNote}${extra}`
+        `${successPrefix}删除 ${finalResult.deleted_files || 0} 个文件、${finalResult.deleted_dirs || 0} 个空子文件夹，释放 ${formatBytes(finalResult.bytes || 0) || "0 B"}（${cleanupCountSummary(finalResult.counts)}）${failNote}${extra}`
       );
       renderCleanupResults(finalResult, { ran: true });
     } else {
       setCleanupStatus(
-        `${successPrefix}扫描 ${finalResult.scanned} 项，匹配 ${finalResult.matched || 0} 个文件、${finalResult.empty_dir_count || 0} 个空子文件夹，约 ${formatCleanupSize(finalResult.bytes || 0)}（${cleanupCountSummary(finalResult.counts)}）${extra}`
+        `${successPrefix}扫描 ${finalResult.scanned} 项，匹配 ${finalResult.matched || 0} 个文件、${finalResult.empty_dir_count || 0} 个空子文件夹，约 ${formatBytes(finalResult.bytes || 0) || "0 B"}（${cleanupCountSummary(finalResult.counts)}）${extra}`
       );
       renderCleanupResults(finalResult);
     }
@@ -572,7 +457,7 @@ async function runCleanupStream(url, { confirmMessage, successPrefix }) {
       const dirs = lastProgress?.deleted_dirs || 0;
       if (deleted || dirs) {
         setCleanupStatus(
-          `已取消，已删除 ${deleted} 个文件、${dirs} 个空子文件夹，释放 ${formatCleanupSize(lastProgress.bytes || 0)}`
+          `已取消，已删除 ${deleted} 个文件、${dirs} 个空子文件夹，释放 ${formatBytes(lastProgress.bytes || 0) || "0 B"}`
         );
       } else {
         setCleanupStatus("已取消");
@@ -606,7 +491,7 @@ function runCleanup() {
     lines.splice(
       1,
       0,
-      `预览结果：${data.matched || 0} 个文件（约 ${formatCleanupSize(data.bytes || 0)}），${data.empty_dir_count || 0} 个空子文件夹（${cleanupCountSummary(data.counts)}）。`
+      `预览结果：${data.matched || 0} 个文件（约 ${formatBytes(data.bytes || 0) || "0 B"}），${data.empty_dir_count || 0} 个空子文件夹（${cleanupCountSummary(data.counts)}）。`
     );
   }
   return runCleanupStream("/api/cleanup/run/stream", {
@@ -615,11 +500,9 @@ function runCleanup() {
   });
 }
 
-cleanupAddFolderBtn?.addEventListener("click", openCleanupFolderModal);
 cleanupClearFoldersBtn?.addEventListener("click", () => {
-  cleanupSelectedFolders = [];
+  cleanupFolderPicker.clear();
   cleanupScanData = null;
-  renderCleanupSelectedFolders();
   renderCleanupResults(null);
   setCleanupStatus("");
 });
@@ -639,40 +522,5 @@ cleanupSmallVideoMbInput?.addEventListener("change", () => {
 });
 cleanupSmallVideoMbInput?.addEventListener("input", scheduleSaveCleanupRules);
 cleanupExtraExtsInput?.addEventListener("input", scheduleSaveCleanupRules);
-closeCleanupFolderModalBtn?.addEventListener("click", closeCleanupFolderModal);
-cleanupFolderUpBtn?.addEventListener("click", () => {
-  if (cleanupBrowseParent === null) return;
-  loadCleanupFolders(cleanupBrowseParent);
-});
-cleanupFolderAddCurrentBtn?.addEventListener("click", () => {
-  const name = cleanupBrowsePath.split("/").filter(Boolean).pop() || cleanupBrowsePath;
-  addCleanupFolder(cleanupBrowsePath, name);
-});
 
-cleanupFolderList?.addEventListener("click", (event) => {
-  const openBtn = event.target.closest(".cleanup-open-btn");
-  if (openBtn) {
-    loadCleanupFolders(openBtn.dataset.path || "");
-    return;
-  }
-  const pickBtn = event.target.closest(".cleanup-pick-btn");
-  if (pickBtn) {
-    addCleanupFolder(pickBtn.dataset.path || "", pickBtn.dataset.name || "");
-  }
-});
-
-cleanupSelectedFoldersEl?.addEventListener("click", (event) => {
-  const removeBtn = event.target.closest("[data-remove-path]");
-  if (!removeBtn) return;
-  const path = removeBtn.dataset.removePath;
-  cleanupSelectedFolders = cleanupSelectedFolders.filter((item) => item.path !== path);
-  cleanupScanData = null;
-  renderCleanupSelectedFolders();
-});
-
-cleanupFolderModal?.addEventListener("click", (event) => {
-  if (event.target === cleanupFolderModal) closeCleanupFolderModal();
-});
-
-renderCleanupSelectedFolders();
 loadCleanupRules();
