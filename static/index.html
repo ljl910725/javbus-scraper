@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=26111801" />
+  <link rel="stylesheet" href="/static/style.css?v=26111802" />
 </head>
 <body class="app-root">
   <div class="container">
@@ -263,6 +263,16 @@
           密码
           <input type="password" id="authPassword" required />
         </label>
+        <label>
+          自动登录
+          <select id="authRememberDays" required>
+            <option value="" selected disabled>请选择时长</option>
+            <option value="1">1 天</option>
+            <option value="7">7 天</option>
+            <option value="30">30 天</option>
+            <option value="365">365 天</option>
+          </select>
+        </label>
         <button type="submit" id="authSubmitBtn">确认</button>
       </form>
       <p id="authError" class="auth-error hidden"></p>
@@ -439,11 +449,11 @@
     </div>
   </div>
 
-  <script src="/static/auth.js?v=26111801"></script>
-  <script src="/static/nav.js?v=26111801"></script>
-  <script src="/static/app.js?v=26111801"></script>
-  <script src="/static/duplicates.js?v=26111801"></script>
-  <script src="/static/nosub.js?v=26111801"></script>
-  <script src="/static/cleanup.js?v=26111801"></script>
+  <script src="/static/auth.js?v=26111802"></script>
+  <script src="/static/nav.js?v=26111802"></script>
+  <script src="/static/app.js?v=26111802"></script>
+  <script src="/static/duplicates.js?v=26111802"></script>
+  <script src="/static/nosub.js?v=26111802"></script>
+  <script src="/static/cleanup.js?v=26111802"></script>
 </body>
 </html>

@@ -22,6 +22,8 @@ const emailField = document.getElementById("emailField");
 const authEmail = document.getElementById("authEmail");
 const authUsername = document.getElementById("authUsername");
 const authPassword = document.getElementById("authPassword");
+const authRememberDays = document.getElementById("authRememberDays");
+const REMEMBER_DAY_CHOICES = [1, 7, 30, 365];
 const lightbox = document.getElementById("lightbox");
 const lightboxImage = document.getElementById("lightboxImage");
 const lightboxCounter = document.getElementById("lightboxCounter");
@@ -2640,16 +2642,24 @@ authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   authError.classList.add("hidden");
   const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
+  const rememberDays = Number(authRememberDays?.value);
+  if (!REMEMBER_DAY_CHOICES.includes(rememberDays)) {
+    authError.textContent = "请选择自动登录时长";
+    authError.classList.remove("hidden");
+    return;
+  }
   const payload =
     authMode === "register"
       ? {
           username: authUsername.value.trim(),
           email: authEmail.value.trim(),
           password: authPassword.value,
+          remember_days: rememberDays,
         }
       : {
           username: authUsername.value.trim(),
           password: authPassword.value,
+          remember_days: rememberDays,
         };
 
   try {

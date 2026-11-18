@@ -599,7 +599,8 @@ textarea:focus,
 .settings-form input:focus,
 .settings-form select:focus,
 .settings-form textarea:focus,
-.modal-card input:focus {
+.modal-card input:focus,
+.modal-card select:focus {
   outline: none;
   border-color: color-mix(in srgb, var(--accent) 45%, var(--border));
   box-shadow: var(--focus-ring);
@@ -1386,7 +1387,8 @@ button:disabled {
   margin-bottom: 0.85rem;
 }
 
-.modal-card input {
+.modal-card input,
+.modal-card select {
   width: 100%;
   margin-top: 0.35rem;
   padding: 0.6rem 0.75rem;

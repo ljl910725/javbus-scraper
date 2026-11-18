@@ -210,11 +210,13 @@ class RegisterRequest(BaseModel):
     username: str
     email: str
     password: str
+    remember_days: int
 
 
 class LoginRequest(BaseModel):
     username: str
     password: str
+    remember_days: int
 
 
 class AuthResponse(BaseModel):

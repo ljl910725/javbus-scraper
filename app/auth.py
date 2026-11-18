@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 import bcrypt
 from jose import JWTError, jwt
@@ -14,25 +14,31 @@ def verify_password(password: str, password_hash: str) -> bool:
     return bcrypt.checkpw(password.encode("utf-8"), password_hash.encode("utf-8"))
 
 
-def _encode_token(user_id: int, username: str, *, days: int, typ: str) -> str:
-    expire = datetime.now(timezone.utc) + timedelta(days=days)
+def _encode_token(user_id: int, username: str, *, expires_at: datetime, typ: str) -> str:
     payload = {
         "sub": str(user_id),
         "username": username,
-        "exp": expire,
+        "exp": expires_at,
         "typ": typ,
     }
     return jwt.encode(payload, settings.jwt_secret, algorithm=settings.jwt_algorithm)
 
 
-def create_access_token(user_id: int, username: str) -> str:
-    # 访问令牌：打开页面时会续期，避免隔几天就被当成未登录
-    return _encode_token(user_id, username, days=settings.jwt_expire_days, typ="access")
+def issue_session_tokens(user_id: int, username: str, expires_at: datetime) -> tuple[str, str]:
+    # 访问令牌和刷新令牌用同一个截止时间，续期也不会超过登录时选的时长
+    access = _encode_token(user_id, username, expires_at=expires_at, typ="access")
+    refresh = _encode_token(user_id, username, expires_at=expires_at, typ="refresh")
+    return access, refresh
 
 
-def create_refresh_token(user_id: int, username: str) -> str:
-    # 刷新令牌只用来换新的访问令牌，有效期更长
-    return _encode_token(user_id, username, days=365, typ="refresh")
+def token_expires_at(payload: dict) -> datetime | None:
+    exp = payload.get("exp")
+    if isinstance(exp, datetime):
+        return exp if exp.tzinfo else exp.replace(tzinfo=timezone.utc)
+    try:
+        return datetime.fromtimestamp(int(exp), tz=timezone.utc)
+    except (TypeError, ValueError, OSError):
+        return None
 
 
 def _decode_token(token: str) -> dict | None:
