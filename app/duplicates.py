@@ -304,4 +304,7 @@ def delete_video_file(path: str) -> dict:
         target.unlink()
     except OSError as exc:
         raise ValueError(f"删除失败: {exc}") from exc
+    # 视频删掉后，本地番号库里的同一条路径也去掉
+    from app import db
+    db.delete_local_videos_by_path(str(target))
     return {"path": str(target), "deleted": True}

@@ -123,6 +123,21 @@ def init_db() -> None:
 
             CREATE INDEX IF NOT EXISTS idx_known_subtitle_files_user
                 ON known_subtitle_files(user_id);
+
+            CREATE TABLE IF NOT EXISTS local_videos (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                code TEXT NOT NULL,
+                name TEXT NOT NULL DEFAULT '',
+                path TEXT NOT NULL,
+                root TEXT NOT NULL DEFAULT '',
+                seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+                UNIQUE (user_id, path)
+            );
+
+            CREATE INDEX IF NOT EXISTS idx_local_videos_user_code
+                ON local_videos(user_id, code);
             """
         )
         conn.commit()
@@ -879,3 +894,115 @@ def list_nosub_replace_jobs(user_id: int, limit: int = 30) -> list[dict]:
             (user_id, max(1, min(int(limit or 30), 100))),
         ).fetchall()
         return [_replace_job_row(row) for row in rows]
+
+
+def list_user_ids() -> list[int]:
+    with get_connection() as conn:
+        rows = conn.execute("SELECT id FROM users ORDER BY id").fetchall()
+        return [int(row["id"]) for row in rows]
+
+
+def upsert_local_video(user_id: int, *, code: str, name: str, path: str, root: str) -> bool:
+    # 同一路径已有记录时只更新番号和看到的时间，返回这次是不是新加的
+    with get_connection() as conn:
+        existing = conn.execute(
+            "SELECT 1 FROM local_videos WHERE user_id = ? AND path = ?",
+            (user_id, path),
+        ).fetchone()
+        conn.execute(
+            """
+            INSERT INTO local_videos (user_id, code, name, path, root, seen_at)
+            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            ON CONFLICT(user_id, path) DO UPDATE SET
+                code = excluded.code,
+                name = excluded.name,
+                root = excluded.root,
+                seen_at = datetime('now')
+            """,
+            (user_id, code, name, path, root),
+        )
+        conn.commit()
+        return existing is None
+
+
+def list_local_videos(user_id: int, root: str | None = None) -> list[dict]:
+    with get_connection() as conn:
+        if root is None:
+            rows = conn.execute(
+                """
+                SELECT code, name, path, root, seen_at
+                FROM local_videos
+                WHERE user_id = ?
+                ORDER BY code, path
+                """,
+                (user_id,),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """
+                SELECT code, name, path, root, seen_at
+                FROM local_videos
+                WHERE user_id = ? AND root = ?
+                ORDER BY code, path
+                """,
+                (user_id, root),
+            ).fetchall()
+        return [dict(row) for row in rows]
+
+
+def list_local_videos_by_codes(user_id: int, codes: list[str]) -> list[dict]:
+    wanted = [code for code in dict.fromkeys(codes) if code]
+    if not wanted:
+        return []
+    found: list[dict] = []
+    with get_connection() as conn:
+        for start in range(0, len(wanted), 400):
+            chunk = wanted[start : start + 400]
+            marks = ",".join("?" for _ in chunk)
+            rows = conn.execute(
+                f"""
+                SELECT code, name, path, root, seen_at
+                FROM local_videos
+                WHERE user_id = ? AND code IN ({marks})
+                ORDER BY code, path
+                """,
+                (user_id, *chunk),
+            ).fetchall()
+            found.extend(dict(row) for row in rows)
+    return found
+
+
+def delete_local_videos_by_path(path: str) -> int:
+    # 文件已经从磁盘删掉时，所有用户库里的这条路径一起去掉
+    with get_connection() as conn:
+        cursor = conn.execute("DELETE FROM local_videos WHERE path = ?", (path,))
+        conn.commit()
+        return cursor.rowcount
+
+
+def delete_local_videos_for_root(user_id: int, root: str) -> int:
+    with get_connection() as conn:
+        cursor = conn.execute(
+            "DELETE FROM local_videos WHERE user_id = ? AND root = ?",
+            (user_id, root),
+        )
+        conn.commit()
+        return cursor.rowcount
+
+
+def delete_local_videos_missing(user_id: int, root: str, keep_paths: set[str]) -> int:
+    with get_connection() as conn:
+        rows = conn.execute(
+            "SELECT path FROM local_videos WHERE user_id = ? AND root = ?",
+            (user_id, root),
+        ).fetchall()
+        gone = [row["path"] for row in rows if row["path"] not in keep_paths]
+        for start in range(0, len(gone), 400):
+            chunk = gone[start : start + 400]
+            marks = ",".join("?" for _ in chunk)
+            conn.execute(
+                f"DELETE FROM local_videos WHERE user_id = ? AND path IN ({marks})",
+                (user_id, *chunk),
+            )
+        conn.commit()
+        return len(gone)

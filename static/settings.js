@@ -183,6 +183,7 @@ async function loadSettings() {
   }
   const data = await res.json();
   fillForm(data.settings || {});
+  loadLibrary();
 }
 
 async function testCd2Connection() {
@@ -463,4 +464,232 @@ p115FolderList?.addEventListener("click", (event) => {
     const path = p115BrowsePath === "/" ? `/${name}` : `${p115BrowsePath.replace(/\/$/, "")}/${name}`;
     selectP115Folder(selectBtn.dataset.cid || "0", path);
   }
+});
+
+const libraryPathsEl = document.getElementById("libraryPaths");
+const libraryDuplicatesEl = document.getElementById("libraryDuplicates");
+const libraryDailyEl = document.getElementById("libraryDaily");
+const libraryStatusEl = document.getElementById("libraryStatus");
+const libraryFolderModal = document.getElementById("libraryFolderModal");
+const libraryFolderList = document.getElementById("libraryFolderList");
+const libraryFolderCurrentPath = document.getElementById("libraryFolderCurrentPath");
+const libraryFolderUpBtn = document.getElementById("libraryFolderUpBtn");
+const libraryFolderStatus = document.getElementById("libraryFolderStatus");
+let libraryBrowsePath = "";
+let libraryBrowseParent = null;
+
+function setLibraryStatus(message, isError = false) {
+  if (!libraryStatusEl) return;
+  libraryStatusEl.textContent = message || "";
+  libraryStatusEl.classList.toggle("errors", Boolean(isError));
+}
+
+function renderLibrary(data) {
+  const daily = data.daily || {};
+  if (libraryDailyEl) {
+    libraryDailyEl.textContent = daily.at
+      ? `上次自动扫描：${daily.at}，新增 ${daily.added || 0}，移除 ${daily.removed || 0}`
+      : "还没有自动扫描过。";
+  }
+  const paths = data.paths || [];
+  if (libraryPathsEl) {
+    libraryPathsEl.innerHTML = paths.length
+      ? paths
+          .map(
+            (item) => `
+        <div class="dup-file">
+          <div class="dup-file-name">
+            <strong>${escapeHtml(item.path)}</strong>
+            <span>${item.count || 0} 个视频</span>
+          </div>
+          <div class="folder-item-actions">
+            <button class="ghost-btn library-scan-btn" type="button" data-path="${escapeAttr(item.path)}">扫描追加</button>
+            <button class="ghost-btn library-remove-btn" type="button" data-path="${escapeAttr(item.path)}">移出列表</button>
+          </div>
+        </div>`
+          )
+          .join("")
+      : '<p class="folder-empty">还没有目录</p>';
+  }
+  const groups = data.duplicates || [];
+  if (libraryDuplicatesEl) {
+    libraryDuplicatesEl.innerHTML = groups.length
+      ? groups
+          .map(
+            (group) => `
+        <section class="dup-group">
+          <div class="dup-group-header"><h3>${escapeHtml(group.code)}</h3><small>${group.files.length} 个文件</small></div>
+          ${(group.files || [])
+            .map(
+              (file) => `
+            <div class="dup-file">
+              <div class="dup-file-name"><strong>${escapeHtml(file.name)}</strong>
+                <button class="ghost-btn library-delete-btn" type="button" data-path="${escapeAttr(file.path)}">删除</button>
+              </div>
+              <div class="dup-file-path">${escapeHtml(file.path)}</div>
+            </div>`
+            )
+            .join("")}
+        </section>`
+          )
+          .join("")
+      : '<p class="folder-empty">没有重复番号</p>';
+  }
+}
+
+async function loadLibrary() {
+  if (!isLoggedIn() || !libraryPathsEl) return;
+  const res = await authFetch("/api/library");
+  if (!res.ok) return;
+  renderLibrary(await res.json().catch(() => ({})));
+}
+
+async function scanLibraryPath(path, button) {
+  if (button) button.disabled = true;
+  setLibraryStatus(`正在扫描 ${path}`);
+  try {
+    const res = await authFetch("/api/library/scan/stream", {
+      method: "POST",
+      body: JSON.stringify({ path }),
+    });
+    if (!res.ok) {
+      const data = await res.json().catch(() => ({}));
+      throw new Error(data.detail || "扫描失败");
+    }
+    let result = null;
+    await readSseJson(res, (event) => {
+      if (event.type === "progress") {
+        setLibraryStatus(`正在扫描，已看 ${event.scanned || 0} 个视频，新加入 ${event.added || 0}`);
+      }
+      if (event.type === "error") throw new Error(event.message || "扫描失败");
+      if (event.type === "done") result = event.result || {};
+    });
+    await loadLibrary();
+    const dupCount = result?.duplicates?.length || 0;
+    setLibraryStatus(
+      `扫描完成：新加入 ${result?.added || 0}。${dupCount ? `有 ${dupCount} 个番号重复，见下面的列表。` : "没有重复番号。"}`
+    );
+  } catch (err) {
+    setLibraryStatus(err.message || "扫描失败", true);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
+function setLibraryFolderStatus(message, isError = false) {
+  if (!libraryFolderStatus) return;
+  libraryFolderStatus.textContent = message || "";
+  libraryFolderStatus.classList.toggle("errors", Boolean(isError));
+}
+
+async function loadLibraryFolders(path = "") {
+  setLibraryFolderStatus("正在加载目录...");
+  const query = path ? `?path=${encodeURIComponent(path)}` : "";
+  const res = await authFetch(`/api/subtitles/browse${query}`);
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setLibraryFolderStatus(data.detail || "加载目录失败", true);
+    libraryFolderList.innerHTML = "";
+    return;
+  }
+  libraryBrowsePath = data.current_path || "";
+  libraryBrowseParent = data.parent_path ?? null;
+  libraryFolderCurrentPath.textContent = libraryBrowsePath || "挂载根目录";
+  libraryFolderUpBtn.disabled = libraryBrowseParent === null;
+  const folders = data.folders || [];
+  libraryFolderList.innerHTML = folders.length
+    ? folders
+        .map(
+          (folder) => `
+      <div class="folder-item">
+        <div class="dup-file-name"><strong>${escapeHtml(folder.name)}</strong>
+          <button class="ghost-btn library-open-btn" type="button" data-path="${escapeAttr(folder.path)}">进入</button>
+        </div>
+        <div class="dup-file-path">${escapeHtml(folder.path)}</div>
+      </div>`
+        )
+        .join("")
+    : '<p class="folder-empty">当前目录没有子文件夹</p>';
+  setLibraryFolderStatus("");
+}
+
+document.getElementById("libraryAddBtn")?.addEventListener("click", () => {
+  if (!isLoggedIn()) return;
+  libraryFolderModal.classList.remove("hidden");
+  loadLibraryFolders(libraryBrowsePath);
+});
+document.getElementById("closeLibraryFolderModalBtn")?.addEventListener("click", () => {
+  libraryFolderModal.classList.add("hidden");
+});
+libraryFolderModal?.addEventListener("click", (event) => {
+  if (event.target === libraryFolderModal) libraryFolderModal.classList.add("hidden");
+});
+libraryFolderUpBtn?.addEventListener("click", () => {
+  if (libraryBrowseParent === null) return;
+  loadLibraryFolders(libraryBrowseParent);
+});
+libraryFolderList?.addEventListener("click", (event) => {
+  const openBtn = event.target.closest(".library-open-btn");
+  if (openBtn) loadLibraryFolders(openBtn.dataset.path || "");
+});
+document.getElementById("libraryFolderUseBtn")?.addEventListener("click", async () => {
+  if (!libraryBrowsePath) {
+    setLibraryFolderStatus("请先进入具体目录", true);
+    return;
+  }
+  const res = await authFetch("/api/library/paths", {
+    method: "POST",
+    body: JSON.stringify({ path: libraryBrowsePath }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setLibraryFolderStatus(data.detail || "添加失败", true);
+    return;
+  }
+  libraryFolderModal.classList.add("hidden");
+  renderLibrary(data);
+  setLibraryStatus("已添加目录");
+});
+libraryPathsEl?.addEventListener("click", async (event) => {
+  const scanBtn = event.target.closest(".library-scan-btn");
+  if (scanBtn) {
+    await scanLibraryPath(scanBtn.dataset.path || "", scanBtn);
+    return;
+  }
+  const removeBtn = event.target.closest(".library-remove-btn");
+  if (!removeBtn) return;
+  const path = removeBtn.dataset.path || "";
+  const res = await authFetch(`/api/library/paths?path=${encodeURIComponent(path)}`, { method: "DELETE" });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setLibraryStatus(data.detail || "移出失败", true);
+    return;
+  }
+  renderLibrary(data);
+  setLibraryStatus("已移出目录，里面的视频没有删除");
+});
+libraryDuplicatesEl?.addEventListener("click", async (event) => {
+  const button = event.target.closest(".library-delete-btn");
+  if (!button) return;
+  const path = button.dataset.path || "";
+  const ok = await showAppConfirm({
+    title: "删除原视频",
+    message: `删除后不能恢复：\n${path}`,
+    confirmText: "删除",
+    danger: true,
+  });
+  if (!ok) return;
+  button.disabled = true;
+  const res = await authFetch("/api/duplicates/delete", {
+    method: "POST",
+    body: JSON.stringify({ path }),
+  });
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) {
+    setLibraryStatus(data.detail || "删除失败", true);
+    button.disabled = false;
+    return;
+  }
+  await loadLibrary();
+  setLibraryStatus("已删除视频和对应记录");
 });

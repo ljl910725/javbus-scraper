@@ -172,9 +172,11 @@ async function pushPastedMagnetsWithCurrentBackend(links, button) {
     confirmText: "推送",
   });
   if (!ok) return false;
+  const libraryDecision = await decideLibraryPush({ links });
+  if (libraryDecision.action === "cancel") return false;
   if (p115TabUsesCd2()) {
     setP115PasteStatus(`正在推送到 ${label}...`, false, true);
-    const success = await pushToOffline({ magnets: links, button, source: "paste" });
+    const success = await pushToOffline({ magnets: links, button, source: "paste", libraryDecision });
     if (!success && !pushFolderModal?.classList.contains("hidden")) {
       setP115PasteStatus("请选择推送目录");
     }
@@ -227,7 +229,12 @@ async function pushPastedMagnetsWithCurrentBackend(links, button) {
         folderHint: p115FolderPath ? ` → ${p115FolderPath}` : "",
         source: "paste",
       }
-    );
+    ).then(async (success) => {
+      if (libraryDecision.action === "delete") {
+        await deletePushedLibraryFiles(libraryDecision.groups, { magnets: links, results });
+      }
+      return success;
+    });
   } finally {
     if (button) button.disabled = false;
   }

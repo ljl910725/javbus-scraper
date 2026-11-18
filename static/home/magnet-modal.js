@@ -219,6 +219,11 @@ async function confirmP115MagnetPush() {
     setP115PasteStatus(message, true);
     return;
   }
+  const libraryDecision = await decideLibraryPush({
+    codes: pendingP115Magnet.code ? [pendingP115Magnet.code] : [],
+    links: [pendingP115Magnet.magnet],
+  });
+  if (libraryDecision.action === "cancel") return;
   p115MagnetConfirmBtn.disabled = true;
   setP115MagnetStatus(`正在推送到 ${label}...`);
   const button = pendingP115Magnet.button;
@@ -231,7 +236,12 @@ async function confirmP115MagnetPush() {
     if (pushTarget === "cd2") {
       const magnet = pendingP115Magnet.magnet;
       const code = pendingP115Magnet.code || "";
-      const success = await pushToOffline({ magnets: [magnet], code, button });
+      const success = await pushToOffline({
+        magnets: [magnet],
+        code,
+        button,
+        libraryDecision,
+      });
       if (success) {
         setP115MagnetStatus("推送完成");
         closeP115MagnetModal();
@@ -257,6 +267,13 @@ async function confirmP115MagnetPush() {
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(apiErrorMessage(data, "推送失败"));
     if (data.success === false) throw new Error(pushFailureMessage(data, data.message || "推送失败"));
+    if (libraryDecision.action === "delete") {
+      await deletePushedLibraryFiles(libraryDecision.groups, {
+        magnets: [pendingP115Magnet.magnet],
+        results: data.results || [{ link: pendingP115Magnet.magnet, success: true }],
+        code: pendingP115Magnet.code || "",
+      });
+    }
     const folderHint = p115FolderPath ? ` → ${p115FolderPath}` : "";
     setStatus(`115${folderHint} ${data.message || "推送完成"}`);
     setP115MagnetStatus(data.message || "推送完成");

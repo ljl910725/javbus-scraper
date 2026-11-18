@@ -28,6 +28,8 @@ DEFAULT_USER_SETTINGS = {
     "cleanup_delete_small_video": True,
     "cleanup_small_video_mb": 100,
     "cleanup_extra_exts": "",
+    "library_paths": [],
+    "library_daily": {},
 }
 
 USER_SETTING_KEYS = frozenset(DEFAULT_USER_SETTINGS.keys())
@@ -38,6 +40,18 @@ PROXY_SETTING_KEYS = frozenset({"proxy_enabled", "http_proxy", "https_proxy"})
 CLEANUP_BOOL_KEYS = frozenset(
     {"cleanup_delete_html", "cleanup_delete_txt", "cleanup_delete_small_video"}
 )
+
+
+def _clean_library_paths(value: list) -> list[str]:
+    paths: list[str] = []
+    seen: set[str] = set()
+    for item in value:
+        path = str(item or "").strip()
+        if not path or path in seen:
+            continue
+        seen.add(path)
+        paths.append(path)
+    return paths
 
 
 def proxy_active(settings_data: dict) -> bool:
@@ -110,6 +124,12 @@ def apply_settings_update(current: dict | None, updates: dict) -> dict:
         if key == "cd2_push_folders" and isinstance(value, list):
             stored[key] = value
             continue
+        if key == "library_paths" and isinstance(value, list):
+            stored[key] = _clean_library_paths(value)
+            continue
+        if key == "library_daily" and isinstance(value, dict):
+            stored[key] = value
+            continue
         if key == "results_page_size":
             try:
                 size = int(value)
@@ -152,6 +172,12 @@ def merge_settings(user_settings: dict | None = None) -> dict:
             if value is None:
                 continue
             if key == "cd2_push_folders" and isinstance(value, list):
+                merged[key] = value
+                continue
+            if key == "library_paths" and isinstance(value, list):
+                merged[key] = _clean_library_paths(value)
+                continue
+            if key == "library_daily" and isinstance(value, dict):
                 merged[key] = value
                 continue
             if key in PROXY_SETTING_KEYS:

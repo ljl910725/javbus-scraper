@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="/static/style.css?v=26111804" />
+  <link rel="stylesheet" href="/static/style.css?v=26111805" />
 </head>
 <body class="app-root">
   <div class="container">
@@ -141,6 +141,18 @@
         <p class="field-hint">精确/模糊搜索结果列表的分页大小，登录后自动同步到账号</p>
       </fieldset>
 
+      <fieldset>
+        <legend>本地番号库</legend>
+        <p id="libraryDaily" class="field-hint">还没有自动扫描过。</p>
+        <div class="options">
+          <button id="libraryAddBtn" class="ghost-btn" type="button">添加目录</button>
+        </div>
+        <div id="libraryPaths" class="p115-paste-list"></div>
+        <h3>重复番号</h3>
+        <div id="libraryDuplicates" class="p115-paste-list"></div>
+        <p id="libraryStatus" class="inline-status"></p>
+      </fieldset>
+
       <button type="submit">保存配置</button>
       <p id="settingsStatus" class="status hidden"></p>
     </form>
@@ -179,9 +191,25 @@
     </div>
   </div>
 
-  <script src="/static/common.js?v=26111804"></script>
-  <script src="/static/auth.js?v=26111804"></script>
-  <script src="/static/nav.js?v=26111804"></script>
-  <script src="/static/settings.js?v=26111804"></script>
+  <div id="libraryFolderModal" class="modal hidden">
+    <div class="modal-card folder-modal-card">
+      <div class="modal-header">
+        <h2>添加本地目录</h2>
+        <button id="closeLibraryFolderModalBtn" class="ghost-btn" type="button">关闭</button>
+      </div>
+      <div class="folder-modal-toolbar">
+        <button id="libraryFolderUpBtn" class="ghost-btn" type="button">上级目录</button>
+        <span id="libraryFolderCurrentPath" class="folder-current-path">挂载根目录</span>
+        <button id="libraryFolderUseBtn" class="ghost-btn" type="button">使用当前目录</button>
+      </div>
+      <div id="libraryFolderList" class="folder-list"></div>
+      <p id="libraryFolderStatus" class="inline-status"></p>
+    </div>
+  </div>
+
+  <script src="/static/common.js?v=26111805"></script>
+  <script src="/static/auth.js?v=26111805"></script>
+  <script src="/static/nav.js?v=26111805"></script>
+  <script src="/static/settings.js?v=26111805"></script>
 </body>
 </html>

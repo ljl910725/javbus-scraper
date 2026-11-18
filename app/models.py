@@ -247,6 +247,15 @@ class UserSettingsRequest(BaseModel):
     cleanup_extra_exts: str | None = None
 
 
+class LibraryPathRequest(BaseModel):
+    path: str
+
+
+class LibraryLookupRequest(BaseModel):
+    codes: list[str] = Field(default_factory=list)
+    links: list[str] = Field(default_factory=list)
+
+
 class UserSettingsResponse(BaseModel):
     settings: dict
 

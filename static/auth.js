@@ -163,6 +163,7 @@ function showAppConfirm({
   okBtn.textContent = confirmText;
   cancelBtn.textContent = cancelText;
   okBtn.classList.toggle("danger-btn", Boolean(danger));
+  document.getElementById("appConfirmKeepBtn")?.classList.add("hidden");
   bringModalToFront(modal);
   modal.classList.remove("hidden");
   return new Promise((resolve) => {
@@ -179,6 +180,54 @@ function showAppConfirm({
       if (event.target === modal) finish(false);
     };
     okBtn.addEventListener("click", onOk);
+    cancelBtn.addEventListener("click", onCancel);
+    modal.addEventListener("click", onBackdrop);
+  });
+}
+
+function showPushExistChoice(message) {
+  // 库里已有同番号时，三个选择：删原片再推、只推不删、取消
+  const modal = ensureConfirmModal();
+  const titleEl = document.getElementById("appConfirmTitle");
+  const messageEl = document.getElementById("appConfirmMessage");
+  const okBtn = document.getElementById("appConfirmOkBtn");
+  const cancelBtn = document.getElementById("appConfirmCancelBtn");
+  let keepBtn = document.getElementById("appConfirmKeepBtn");
+  if (!keepBtn) {
+    keepBtn = document.createElement("button");
+    keepBtn.id = "appConfirmKeepBtn";
+    keepBtn.type = "button";
+    keepBtn.className = "ghost-btn";
+    cancelBtn.parentElement.insertBefore(keepBtn, okBtn);
+  }
+  titleEl.textContent = "本地已有同番号";
+  messageEl.textContent = message;
+  messageEl.style.whiteSpace = "pre-wrap";
+  okBtn.textContent = "继续推送并删除原视频";
+  keepBtn.textContent = "继续推送不删除";
+  cancelBtn.textContent = "取消推送";
+  okBtn.classList.add("danger-btn");
+  keepBtn.classList.remove("hidden");
+  bringModalToFront(modal);
+  modal.classList.remove("hidden");
+  return new Promise((resolve) => {
+    const finish = (value) => {
+      modal.classList.add("hidden");
+      keepBtn.classList.add("hidden");
+      okBtn.removeEventListener("click", onDelete);
+      keepBtn.removeEventListener("click", onKeep);
+      cancelBtn.removeEventListener("click", onCancel);
+      modal.removeEventListener("click", onBackdrop);
+      resolve(value);
+    };
+    const onDelete = () => finish("delete");
+    const onKeep = () => finish("keep");
+    const onCancel = () => finish("cancel");
+    const onBackdrop = (event) => {
+      if (event.target === modal) finish("cancel");
+    };
+    okBtn.addEventListener("click", onDelete);
+    keepBtn.addEventListener("click", onKeep);
     cancelBtn.addEventListener("click", onCancel);
     modal.addEventListener("click", onBackdrop);
   });

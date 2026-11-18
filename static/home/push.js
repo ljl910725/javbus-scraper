@@ -256,6 +256,55 @@ function presentPushOutcome(data, { magnets = [], folderHint = "", source = "" }
   return false;
 }
 
+async function lookupLocalVideos({ codes = [], links = [] } = {}) {
+  const res = await authFetch("/api/library/lookup", {
+    method: "POST",
+    body: JSON.stringify({ codes, links }),
+  });
+  if (!res.ok) return [];
+  const data = await res.json().catch(() => ({}));
+  return data.groups || [];
+}
+
+function libraryExistMessage(groups) {
+  return groups
+    .map((group) => {
+      const files = (group.files || []).map((file) => `${file.name}\n${file.path}`).join("\n");
+      return `${group.code}\n${files}`;
+    })
+    .join("\n\n");
+}
+
+async function decideLibraryPush({ codes = [], links = [] } = {}) {
+  const groups = await lookupLocalVideos({ codes, links });
+  if (!groups.length) return { action: "keep", groups: [] };
+  const action = await showPushExistChoice(libraryExistMessage(groups));
+  return { action, groups };
+}
+
+async function deletePushedLibraryFiles(groups, { magnets = [], results = [], code = "" } = {}) {
+  const failedLinks = new Set(
+    (results || [])
+      .filter((row) => row && row.success === false)
+      .map((row) => String(row.link || "").toLowerCase())
+  );
+  const anyFailed = (results || []).some((row) => row && row.success === false);
+  const files = [];
+  groups.forEach((group) => {
+    const links = group.links || [];
+    if (links.some((link) => failedLinks.has(String(link).toLowerCase()))) return;
+    // 按番号推送时，这次只要有一条失败就不删这个番号的原视频
+    if (!links.length && code && anyFailed) return;
+    files.push(...(group.files || []));
+  });
+  for (const file of files) {
+    await authFetch("/api/duplicates/delete", {
+      method: "POST",
+      body: JSON.stringify({ path: file.path }),
+    });
+  }
+}
+
 async function pushToOffline({
   magnets = [],
   code = null,
@@ -264,6 +313,7 @@ async function pushToOffline({
   pushFolderId = null,
   onSuccess = null,
   source = "",
+  libraryDecision = null,
 }) {
   if (!pushReady) {
     setStatus("推送未就绪，请登录后在配置页设置 CD2 或 115");
@@ -282,6 +332,16 @@ async function pushToOffline({
         openPushFolderModal({ magnets, code, pushBest, button, onSuccess, source });
         return false;
       }
+    }
+  }
+
+  if (!libraryDecision) {
+    libraryDecision = await decideLibraryPush({
+      codes: code ? [code] : [],
+      links: magnets,
+    });
+    if (libraryDecision.action === "cancel") {
+      return false;
     }
   }
 
@@ -305,6 +365,13 @@ async function pushToOffline({
     const folder = pushFolders.find((item) => item.id === pushFolderId);
     const folderHint = folder ? ` → ${folder.name}` : "";
     const allOk = presentPushOutcome(data, { magnets, folderHint, source });
+    if (libraryDecision.action === "delete") {
+      await deletePushedLibraryFiles(libraryDecision.groups, {
+        magnets,
+        results: data.results || [],
+        code: code || "",
+      });
+    }
     if (allOk) {
       if (button) button.textContent = "已推送";
       if (typeof onSuccess === "function") {

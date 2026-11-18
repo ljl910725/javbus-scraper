@@ -447,8 +447,12 @@ def _safe_unlink(path: Path) -> None:
     for attempt in range(4):
         try:
             path.unlink()
+            from app import db
+            db.delete_local_videos_by_path(str(resolved))
             return
         except FileNotFoundError:
+            from app import db
+            db.delete_local_videos_by_path(str(resolved))
             return
         except OSError as exc:
             last_exc = exc
