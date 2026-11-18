@@ -175,8 +175,10 @@ async function loadSettings() {
 
   const res = await authFetch("/api/settings");
   if (!res.ok) {
-    if (res.status === 401) expireSession();
-    setSettingsStatus("加载配置失败，请重新登录", true);
+    setSettingsStatus(
+      res.status === 401 ? "登录已过期，请重新登录" : `加载配置失败（HTTP ${res.status}）`,
+      true
+    );
     return;
   }
   const data = await res.json();

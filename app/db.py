@@ -129,21 +129,6 @@ def init_db() -> None:
     close_stale_nosub_replace_jobs()
 
 
-def create_user(username: str, email: str, password_hash: str) -> dict:
-    with get_connection() as conn:
-        cursor = conn.execute(
-            "INSERT INTO users (username, email, password_hash) VALUES (?, ?, ?)",
-            (username, email, password_hash),
-        )
-        user_id = cursor.lastrowid
-        conn.execute(
-            "INSERT INTO user_settings (user_id, settings_json) VALUES (?, '{}')",
-            (user_id,),
-        )
-        conn.commit()
-        return get_user_by_id(user_id)
-
-
 def get_user_by_id(user_id: int) -> dict | None:
     with get_connection() as conn:
         row = conn.execute(

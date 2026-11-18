@@ -12,14 +12,11 @@ const configInfoEl = document.getElementById("configInfo");
 const errorsEl = document.getElementById("errors");
 const resultsEl = document.getElementById("results");
 const loginBtn = document.getElementById("loginBtn");
-const registerBtn = document.getElementById("registerBtn");
 const authModal = document.getElementById("authModal");
 const authForm = document.getElementById("authForm");
 const authModalTitle = document.getElementById("authModalTitle");
 const authSubmitBtn = document.getElementById("authSubmitBtn");
 const authError = document.getElementById("authError");
-const emailField = document.getElementById("emailField");
-const authEmail = document.getElementById("authEmail");
 const authUsername = document.getElementById("authUsername");
 const authPassword = document.getElementById("authPassword");
 const authRememberDays = document.getElementById("authRememberDays");
@@ -59,7 +56,6 @@ let p115Ready = false;
 let p115FolderPath = "";
 let p115FolderCid = "";
 let pendingP115Magnet = null;
-let authMode = "login";
 let lightboxGallery = [];
 let lightboxIndex = 0;
 let pendingPushRequest = null;
@@ -710,9 +706,12 @@ function setStatus(message, loading = false) {
 }
 
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  // 结果也会放进 data-xxx="..." 属性里，双引号必须转义，否则带 " 的文件名会把按钮弄坏
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function escapeAttr(text) {
@@ -942,8 +941,14 @@ async function downloadSubtitleFile(button) {
     }
     const blob = await res.blob();
     const disposition = res.headers.get("Content-Disposition") || "";
+    // 中文文件名放在 filename*=UTF-8''... 里，要先解码
+    const encodedMatch = disposition.match(/filename\*=UTF-8''([^;]+)/i);
     const match = disposition.match(/filename=\"?([^\";]+)\"?/i);
-    const filename = match ? match[1] : `${button.dataset.code || "subtitle"}.srt`;
+    const filename = encodedMatch
+      ? decodeURIComponent(encodedMatch[1])
+      : match
+        ? match[1]
+        : `${button.dataset.code || "subtitle"}.srt`;
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
@@ -1446,13 +1451,11 @@ function formatQueryErrors(errors) {
     .join("；");
 }
 
-function openAuthModal(mode) {
-  authMode = mode;
+function openAuthModal() {
   authError.classList.add("hidden");
   authForm.reset();
-  authModalTitle.textContent = mode === "register" ? "注册" : "登录";
-  authSubmitBtn.textContent = mode === "register" ? "注册" : "登录";
-  emailField.classList.toggle("hidden", mode !== "register");
+  authModalTitle.textContent = "登录";
+  authSubmitBtn.textContent = "登录";
   bringModalToFront(authModal);
   authModal.classList.remove("hidden");
 }
@@ -1468,10 +1471,11 @@ async function loadConfig() {
       authFetch("/api/push/status"),
     ]);
     if (!configRes.ok || !pushRes.ok) {
+      // 只有登录过期才提示重新登录，其它错误把状态码写出来，方便判断是哪边出错
+      const failed = !configRes.ok ? configRes : pushRes;
       configInfoEl.classList.remove("hidden");
-      configInfoEl.textContent = isLoggedIn()
-        ? `用户: ${getUser()?.username || ""} | 配置加载失败，请重新登录`
-        : "未登录";
+      configInfoEl.textContent =
+        failed.status === 401 ? "登录已过期，请重新登录" : `配置加载失败（HTTP ${failed.status}）`;
       return;
     }
     const config = await configRes.json();
@@ -1824,7 +1828,11 @@ const p115MagnetStatus = document.getElementById("p115MagnetStatus");
 const p115MagnetConfirmBtn = document.getElementById("p115MagnetConfirmBtn");
 const closeP115MagnetModalBtn = document.getElementById("closeP115MagnetModalBtn");
 const p115MagnetToolbar = document.querySelector("#p115MagnetModal .p115-magnet-toolbar");
-const P115_VIDEO_EXTS = [".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts", ".iso"];
+// 跟后端 app/subtitles/storage.py 的 VIDEO_EXTENSIONS 保持一致
+const P115_VIDEO_EXTS = [
+  ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
+  ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",
+];
 
 function setP115MagnetStatus(message, isError = false) {
   if (!p115MagnetStatus) return;
@@ -2636,46 +2644,36 @@ async function searchFuzzy() {
   }
 }
 
-loginBtn.addEventListener("click", () => openAuthModal("login"));
-registerBtn.addEventListener("click", () => openAuthModal("register"));
+loginBtn.addEventListener("click", () => openAuthModal());
 authForm.addEventListener("submit", async (event) => {
   event.preventDefault();
   authError.classList.add("hidden");
-  const endpoint = authMode === "register" ? "/api/auth/register" : "/api/auth/login";
   const rememberDays = Number(authRememberDays?.value);
   if (!REMEMBER_DAY_CHOICES.includes(rememberDays)) {
     authError.textContent = "请选择自动登录时长";
     authError.classList.remove("hidden");
     return;
   }
-  const payload =
-    authMode === "register"
-      ? {
-          username: authUsername.value.trim(),
-          email: authEmail.value.trim(),
-          password: authPassword.value,
-          remember_days: rememberDays,
-        }
-      : {
-          username: authUsername.value.trim(),
-          password: authPassword.value,
-          remember_days: rememberDays,
-        };
+  const payload = {
+    username: authUsername.value.trim(),
+    password: authPassword.value,
+    remember_days: rememberDays,
+  };
 
   try {
-    const res = await fetch(endpoint, {
+    const res = await fetch("/api/auth/login", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),
     });
     const data = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(data.detail || "认证失败");
-    setAuth(data.access_token, data.user, data.refresh_token);
+    if (!res.ok) throw new Error(data.detail || "登录失败");
+    setAuth(data.access_token, data.user);
     closeAuthModal();
     updateNavUI();
     loadConfig();
     if (typeof loadCleanupRules === "function") loadCleanupRules();
-    setStatus(`${authMode === "register" ? "注册" : "登录"}成功`);
+    setStatus("登录成功");
   } catch (err) {
     authError.textContent = err.message;
     authError.classList.remove("hidden");

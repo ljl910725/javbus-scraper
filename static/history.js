@@ -4,9 +4,12 @@ const pushHistoryList = document.getElementById("pushHistoryList");
 const refreshPushHistoryBtn = document.getElementById("refreshPushHistoryBtn");
 
 function escapeHtml(text) {
-  const div = document.createElement("div");
-  div.textContent = text;
-  return div.innerHTML;
+  // 结果也会放进 data-code="..." 属性里，双引号必须转义
+  return String(text ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
 }
 
 function formatHistoryTime(value) {
@@ -84,8 +87,8 @@ async function loadPushHistory() {
   try {
     const res = await authFetch("/api/push/history?limit=50");
     if (!res.ok) {
-      if (res.status === 401) expireSession();
-      pushHistoryList.innerHTML = '<p class="push-history-empty">加载推送历史失败</p>';
+      const message = res.status === 401 ? "登录已过期，请重新登录" : `加载推送历史失败（HTTP ${res.status}）`;
+      pushHistoryList.innerHTML = `<p class="push-history-empty">${escapeHtml(message)}</p>`;
       return;
     }
     const data = await res.json();

@@ -4,7 +4,7 @@ import io
 import re
 import zipfile
 from dataclasses import dataclass
-from urllib.parse import urljoin
+from urllib.parse import urljoin, urlsplit
 
 from bs4 import BeautifulSoup
 
@@ -58,6 +58,15 @@ def normalize_subtitle_code(code: str) -> str:
 
 def _absolute(path: str) -> str:
     return urljoin(BASE_URL, path)
+
+
+def _require_site_url(url: str) -> None:
+    # 字幕地址由浏览器传上来，只认本站，防止别人借接口读内网页面
+    parts = urlsplit(url or "")
+    host = (parts.hostname or "").lower()
+    site = (urlsplit(BASE_URL).hostname or "").removeprefix("www.")
+    if parts.scheme not in {"http", "https"} or not (host == site or host.endswith(f".{site}")):
+        raise ValueError("字幕地址不是 avsubtitles 的网址")
 
 
 async def _get_html(client: JavBusClient, url: str, *, referer: str | None = None) -> str:
@@ -195,6 +204,7 @@ async def download_avsubtitle(
     code: str,
     language_code: str,
 ) -> tuple[bytes, str]:
+    _require_site_url(detail_url)
     if not rev_id:
         rev_id, _ = await _load_rev_id(client, detail_url)
     if not rev_id:

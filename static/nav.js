@@ -3,7 +3,6 @@ function updateNavUI() {
   const userMenu = document.getElementById("userMenu");
   const userMenuName = document.getElementById("userMenuName");
   const loginBtn = document.getElementById("loginBtn");
-  const registerBtn = document.getElementById("registerBtn");
 
   if (!userMenu || !loginBtn) return;
 
@@ -11,12 +10,10 @@ function updateNavUI() {
     userMenu.classList.remove("hidden");
     if (userMenuName) userMenuName.textContent = user.username;
     loginBtn.classList.add("hidden");
-    registerBtn?.classList.add("hidden");
   } else {
     userMenu.classList.remove("is-open");
     userMenu.classList.add("hidden");
     loginBtn.classList.remove("hidden");
-    registerBtn?.classList.remove("hidden");
   }
 }
 
@@ -58,16 +55,10 @@ function initNav(options = {}) {
   initUserMenuHover();
 
   const loginBtn = document.getElementById("loginBtn");
-  const registerBtn = document.getElementById("registerBtn");
   const hasAuthModal = Boolean(document.getElementById("authForm"));
 
   if (!hasAuthModal && loginBtn?.tagName === "BUTTON") {
     loginBtn.addEventListener("click", () => {
-      window.location.href = "/";
-    });
-  }
-  if (!hasAuthModal && registerBtn?.tagName === "BUTTON") {
-    registerBtn.addEventListener("click", () => {
       window.location.href = "/";
     });
   }

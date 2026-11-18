@@ -6,11 +6,9 @@ import time
 from collections import defaultdict
 from pathlib import Path
 
+from app.subtitles.storage import VIDEO_EXTENSIONS
+
 _MAX_SCAN_FILES = 80000
-VIDEO_EXTENSIONS = {
-    ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
-    ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",
-}
 
 _TRAILING_SUFFIX = re.compile(
     r"(?i)(?:[-_.\s]*(?:uncensored|leaked|leak|hdr10|2160p|1080p|720p|"

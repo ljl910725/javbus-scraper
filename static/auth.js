@@ -1,13 +1,8 @@
 const TOKEN_KEY = "javbus_token";
-const REFRESH_KEY = "javbus_refresh";
 const USER_KEY = "javbus_user";
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
-}
-
-function getRefreshToken() {
-  return localStorage.getItem(REFRESH_KEY) || "";
 }
 
 function getUser() {
@@ -15,17 +10,15 @@ function getUser() {
   return raw ? JSON.parse(raw) : null;
 }
 
-function setAuth(token, user, refreshToken) {
+function setAuth(token, user) {
   localStorage.setItem(TOKEN_KEY, token);
-  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
-  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
+  localStorage.setItem(USER_KEY, JSON.stringify(user));
   sessionExpired = false;
 }
 
 function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
-  localStorage.removeItem(REFRESH_KEY);
 }
 
 function authHeaders(extra = {}) {
@@ -33,42 +26,10 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
 }
 
-let sessionRefresh = null;
 let sessionExpired = false;
 
-async function refreshSession() {
-  if (sessionRefresh) return sessionRefresh;
-  const refreshToken = getRefreshToken();
-  const accessToken = getToken() || "";
-  if (!refreshToken && !accessToken) return false;
-  sessionRefresh = (async () => {
-    try {
-      // 打开页面时用还没过期的令牌换一套新的，避免本地显示已登录、接口却按未登录
-      const res = await fetch("/api/auth/refresh", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          refresh_token: refreshToken,
-          access_token: accessToken,
-        }),
-      });
-      if (!res.ok) return false;
-      const data = await res.json().catch(() => ({}));
-      if (!data.access_token) return false;
-      setAuth(data.access_token, data.user, data.refresh_token);
-      if (typeof updateNavUI === "function") updateNavUI();
-      return true;
-    } catch {
-      return false;
-    } finally {
-      sessionRefresh = null;
-    }
-  })();
-  return sessionRefresh;
-}
-
 function expireSession() {
-  const hadSession = Boolean(getToken() || getRefreshToken());
+  const hadSession = Boolean(getToken());
   clearAuth();
   if (typeof updateNavUI === "function") updateNavUI();
   if (!hadSession || sessionExpired) return;
@@ -80,21 +41,22 @@ function expireSession() {
 }
 
 async function ensureSession() {
-  if (!getToken() && !getRefreshToken()) return false;
-  const renewed = await refreshSession();
-  if (!renewed) expireSession();
-  return renewed;
+  if (!getToken()) return false;
+  // 打开页面先确认令牌还有效，过期了就清掉，避免显示已登录、配置却全是未配置
+  try {
+    const res = await authFetch("/api/auth/me");
+    return res.ok;
+  } catch {
+    return false;
+  }
 }
 
-async function authFetch(url, options = {}, retried = false) {
+async function authFetch(url, options = {}) {
   const headers = authHeaders(
     options.headers || { "Content-Type": "application/json" }
   );
   const res = await fetch(url, { ...options, headers });
-  if (res.status !== 401 || retried || String(url).includes("/api/auth/")) return res;
-  const renewed = await refreshSession();
-  if (renewed) return authFetch(url, options, true);
-  expireSession();
+  if (res.status === 401 && getToken()) expireSession();
   return res;
 }
 

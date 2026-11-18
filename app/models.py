@@ -206,13 +206,6 @@ class P115MagnetPushRequest(BaseModel):
     code: str | None = None
 
 
-class RegisterRequest(BaseModel):
-    username: str
-    email: str
-    password: str
-    remember_days: int
-
-
 class LoginRequest(BaseModel):
     username: str
     password: str
@@ -222,13 +215,7 @@ class LoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
-    refresh_token: str = ""
     user: dict
-
-
-class RefreshRequest(BaseModel):
-    refresh_token: str = ""
-    access_token: str = ""
 
 
 class UserSettingsRequest(BaseModel):

@@ -1,3 +1,5 @@
+from urllib.parse import urlsplit
+
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
 
@@ -39,6 +41,23 @@ from app.integrations.p115 import P115Error, P115NotConfiguredError
 router = APIRouter(prefix="/api")
 
 
+_COVER_IMAGE_DOMAINS = ("dmm.co.jp",)
+
+
+def _cover_url_allowed(url: str) -> bool:
+    # 只放行 JavBus 自己和 DMM 图床，防止别人借这个接口读内网页面
+    parts = urlsplit(url)
+    host = (parts.hostname or "").lower()
+    if parts.scheme not in {"http", "https"} or not host:
+        return False
+    javbus_host = (urlsplit(settings.base_url).hostname or "").lower()
+    javbus_domain = javbus_host.removeprefix("www.")
+    for domain in (javbus_domain, *_COVER_IMAGE_DOMAINS):
+        if domain and (host == domain or host.endswith(f".{domain}")):
+            return True
+    return False
+
+
 def _guess_media_type(url: str) -> str:
     lower = url.lower().split("?")[0]
     if lower.endswith(".png"):
@@ -54,8 +73,11 @@ async def proxy_cover(
     referer: str = Query("", description="来源页 Referer"),
     user: OptionalUser = None,
 ) -> Response:
-    if not url.startswith(("http://", "https://")):
-        raise HTTPException(status_code=400, detail="无效的图片 URL")
+    # 图片地址里带着登录令牌，这里同时认请求头和网址参数
+    if not user:
+        raise HTTPException(status_code=401, detail="未登录")
+    if not _cover_url_allowed(url):
+        raise HTTPException(status_code=400, detail="只能加载 JavBus 和 DMM 的图片")
 
     try:
         client = get_client(_user_settings(user))

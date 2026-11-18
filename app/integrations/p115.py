@@ -19,6 +19,7 @@ from app.scraper.magnets import (
     magnet_needs_amp_retry,
     parse_ed2k_link,
 )
+from app.subtitles.storage import VIDEO_EXTENSIONS
 from app.user_settings import effective_proxies, merge_settings
 
 P115_HEADERS = {
@@ -298,10 +299,6 @@ async def push_magnets(links: list[str], user_settings: dict | None = None) -> l
 
 
 _INFOHASH_RE = re.compile(r"xt=urn:btih:([a-zA-Z0-9]+)", re.I)
-_VIDEO_EXTS = {
-    ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
-    ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",
-}
 _TORRENT_CACHE_URLS = (
     "https://itorrents.org/torrent/{hash}.torrent",
     "https://btcache.me/torrent/{hash}",
@@ -423,9 +420,9 @@ def _default_wanted(files: list[dict]) -> list[bool]:
     for item in files:
         suffix = Path(item["path"]).suffix.lower()
         size = int(item.get("size") or 0)
-        flags.append(suffix in _VIDEO_EXTS and size >= 50 * 1024 * 1024)
+        flags.append(suffix in VIDEO_EXTENSIONS and size >= 50 * 1024 * 1024)
     if not any(flags):
-        flags = [Path(item["path"]).suffix.lower() in _VIDEO_EXTS for item in files]
+        flags = [Path(item["path"]).suffix.lower() in VIDEO_EXTENSIONS for item in files]
     if not any(flags):
         flags = [True] * len(files)
     return flags

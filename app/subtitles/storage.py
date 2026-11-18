@@ -7,11 +7,11 @@ from pathlib import Path
 from app.config import settings
 
 _INVALID_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
+# 全项目共用这一份视频格式，前端 app.js 的 P115_VIDEO_EXTS 要跟它保持一致
 VIDEO_EXTENSIONS = {
     ".mp4", ".mkv", ".avi", ".wmv", ".mov", ".flv", ".webm", ".m4v", ".ts",
     ".mpg", ".mpeg", ".iso", ".rmvb", ".rm", ".vob", ".m2ts", ".asf",
 }
-_VIDEO_EXTENSIONS = VIDEO_EXTENSIONS
 _MAX_SEARCH_RESULTS = 50
 _MAX_SCAN_ENTRIES = 8000
 
@@ -36,7 +36,7 @@ def _file_info(entry: Path) -> dict[str, str | bool]:
         "name": entry.name,
         "path": str(entry.resolve()),
         "parent_dir": str(entry.parent.resolve()),
-        "is_video": suffix in _VIDEO_EXTENSIONS,
+        "is_video": suffix in VIDEO_EXTENSIONS,
         "size": size,
         "mtime": mtime,
     }

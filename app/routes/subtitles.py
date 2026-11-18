@@ -1,4 +1,5 @@
 import asyncio
+from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Query
 from fastapi.responses import Response
@@ -72,13 +73,13 @@ async def subtitle_search_files(
 
 @router.get("/download")
 async def subtitle_download(
+    user: CurrentUser,
     provider: str = Query(..., description="字幕来源"),
     sub_id: str = Query(..., description="字幕 ID"),
     rev_id: str = Query("", description="字幕版本 ID"),
     detail_url: str = Query(..., description="字幕详情页 URL"),
     code: str = Query("", description="番号"),
     language_code: str = Query("", description="语言代码"),
-    user: OptionalUser = None,
 ) -> Response:
     try:
         content, filename = await download_subtitle_file(
@@ -95,10 +96,11 @@ async def subtitle_download(
     except Exception as exc:
         raise HTTPException(status_code=502, detail=f"字幕下载失败: {exc}") from exc
 
+    # 响应头只能放英文字符，中文文件名要按 UTF-8 编码后放进 filename*
     return Response(
         content=content,
         media_type="application/x-subrip; charset=utf-8",
-        headers={"Content-Disposition": f'attachment; filename="{filename}"'},
+        headers={"Content-Disposition": f"attachment; filename*=UTF-8''{quote(filename, safe='')}"},
     )
 
 

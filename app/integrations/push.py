@@ -1,3 +1,4 @@
+import asyncio
 from dataclasses import dataclass
 
 from app.config import settings as app_settings
@@ -89,23 +90,31 @@ def folder_meta(user_settings: dict | None = None, folder_id: str | None = None)
 
 async def check_push_status(user_settings: dict | None = None) -> dict:
     cfg = _resolve_settings(user_settings)
+    backend = active_backend(user_settings)
     p115_info = {
         "p115_ready": False,
         "p115_user_name": "",
         "p115_folder_cid": cfg.get("p115_folder_cid") or "",
         "p115_folder_path": cfg.get("p115_folder_path") or "",
     }
-    if _p115_configured(cfg):
-        try:
-            status = await p115.check_p115_status(user_settings)
-            p115_info["p115_ready"] = bool(status.get("logged_in", False))
-            p115_info["p115_user_name"] = status.get("user_name") or ""
-        except Exception:
-            p115_info["p115_ready"] = False
 
-    backend = active_backend(user_settings)
+    # 115 和 CD2 同时检查，115 只查一次，打开页面不用等两轮网络请求
+    checks = {}
+    if _p115_configured(cfg):
+        checks["p115"] = p115.check_p115_status(user_settings)
     if backend == "cd2":
-        status = await cd2.check_cd2_status(user_settings)
+        checks["cd2"] = cd2.check_cd2_status(user_settings)
+    results = dict(zip(checks, await asyncio.gather(*checks.values(), return_exceptions=True)))
+    p115_status = results.get("p115")
+    cd2_status = results.get("cd2")
+    if isinstance(p115_status, dict):
+        p115_info["p115_ready"] = bool(p115_status.get("logged_in", False))
+        p115_info["p115_user_name"] = p115_status.get("user_name") or ""
+
+    if backend == "cd2":
+        if isinstance(cd2_status, BaseException):
+            raise cd2_status
+        status = cd2_status
         status["backend"] = "cd2"
         status["ready"] = bool(
             status.get("connected", False) and status.get("folder_valid", False)
@@ -113,17 +122,17 @@ async def check_push_status(user_settings: dict | None = None) -> dict:
         status.update(p115_info)
         return status
     if backend == "p115":
-        status = await p115.check_p115_status(user_settings)
+        # 115 是主推送方式时，检查出错要报出来，不能当成未登录
+        if isinstance(p115_status, BaseException):
+            raise p115_status
         return {
             "backend": "p115",
-            "ready": status.get("logged_in", False),
-            "configured": status.get("configured", False),
-            "user_name": status.get("user_name", ""),
-            "message": status.get("message", ""),
+            "ready": p115_status.get("logged_in", False),
+            "configured": p115_status.get("configured", False),
+            "user_name": p115_status.get("user_name", ""),
+            "message": p115_status.get("message", ""),
             "push_folders": [],
             **p115_info,
-            "p115_ready": bool(status.get("logged_in", False)),
-            "p115_user_name": status.get("user_name") or "",
         }
     return {
         "backend": "",
