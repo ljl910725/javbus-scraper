@@ -1465,6 +1465,13 @@ async function loadConfig() {
       authFetch("/api/config"),
       authFetch("/api/push/status"),
     ]);
+    if (!configRes.ok || !pushRes.ok) {
+      configInfoEl.classList.remove("hidden");
+      configInfoEl.textContent = isLoggedIn()
+        ? `用户: ${getUser()?.username || ""} | 配置加载失败，请重新登录`
+        : "未登录";
+      return;
+    }
     const config = await configRes.json();
     const push = await pushRes.json();
     pushReady = push.ready;
@@ -2653,7 +2660,7 @@ authForm.addEventListener("submit", async (event) => {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || "认证失败");
-    setAuth(data.access_token, data.user);
+    setAuth(data.access_token, data.user, data.refresh_token);
     closeAuthModal();
     updateNavUI();
     loadConfig();
@@ -3044,5 +3051,11 @@ pushFolderChoices.addEventListener("click", async (event) => {
   await pushToOffline({ ...request, pushFolderId: choice.dataset.folderId });
 });
 
-initNav({ onLogout: () => { clearSearchState(); loadConfig(); } });
-loadConfig();
+async function bootApp() {
+  // 先续登录，再拉配置，避免过期令牌被当成未配置
+  await ensureSession();
+  initNav({ onLogout: () => { clearSearchState(); loadConfig(); } });
+  loadConfig();
+}
+
+bootApp();

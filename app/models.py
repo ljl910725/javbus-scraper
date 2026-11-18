@@ -220,7 +220,13 @@ class LoginRequest(BaseModel):
 class AuthResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
+    refresh_token: str = ""
     user: dict
+
+
+class RefreshRequest(BaseModel):
+    refresh_token: str = ""
+    access_token: str = ""
 
 
 class UserSettingsRequest(BaseModel):

@@ -1,8 +1,13 @@
 const TOKEN_KEY = "javbus_token";
+const REFRESH_KEY = "javbus_refresh";
 const USER_KEY = "javbus_user";
 
 function getToken() {
   return localStorage.getItem(TOKEN_KEY);
+}
+
+function getRefreshToken() {
+  return localStorage.getItem(REFRESH_KEY) || "";
 }
 
 function getUser() {
@@ -10,14 +15,17 @@ function getUser() {
   return raw ? JSON.parse(raw) : null;
 }
 
-function setAuth(token, user) {
+function setAuth(token, user, refreshToken) {
   localStorage.setItem(TOKEN_KEY, token);
-  localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (user) localStorage.setItem(USER_KEY, JSON.stringify(user));
+  if (refreshToken) localStorage.setItem(REFRESH_KEY, refreshToken);
+  sessionExpired = false;
 }
 
 function clearAuth() {
   localStorage.removeItem(TOKEN_KEY);
   localStorage.removeItem(USER_KEY);
+  localStorage.removeItem(REFRESH_KEY);
 }
 
 function authHeaders(extra = {}) {
@@ -25,11 +33,69 @@ function authHeaders(extra = {}) {
   return token ? { ...extra, Authorization: `Bearer ${token}` } : extra;
 }
 
-async function authFetch(url, options = {}) {
+let sessionRefresh = null;
+let sessionExpired = false;
+
+async function refreshSession() {
+  if (sessionRefresh) return sessionRefresh;
+  const refreshToken = getRefreshToken();
+  const accessToken = getToken() || "";
+  if (!refreshToken && !accessToken) return false;
+  sessionRefresh = (async () => {
+    try {
+      // 打开页面时用还没过期的令牌换一套新的，避免本地显示已登录、接口却按未登录
+      const res = await fetch("/api/auth/refresh", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          refresh_token: refreshToken,
+          access_token: accessToken,
+        }),
+      });
+      if (!res.ok) return false;
+      const data = await res.json().catch(() => ({}));
+      if (!data.access_token) return false;
+      setAuth(data.access_token, data.user, data.refresh_token);
+      if (typeof updateNavUI === "function") updateNavUI();
+      return true;
+    } catch {
+      return false;
+    } finally {
+      sessionRefresh = null;
+    }
+  })();
+  return sessionRefresh;
+}
+
+function expireSession() {
+  const hadSession = Boolean(getToken() || getRefreshToken());
+  clearAuth();
+  if (typeof updateNavUI === "function") updateNavUI();
+  if (!hadSession || sessionExpired) return;
+  sessionExpired = true;
+  if (typeof showToast === "function") {
+    showToast("登录已过期，请重新登录", { type: "error", timeout: 6000 });
+  }
+  if (typeof openAuthModal === "function") openAuthModal("login");
+}
+
+async function ensureSession() {
+  if (!getToken() && !getRefreshToken()) return false;
+  const renewed = await refreshSession();
+  if (!renewed) expireSession();
+  return renewed;
+}
+
+async function authFetch(url, options = {}, retried = false) {
   const headers = authHeaders(
     options.headers || { "Content-Type": "application/json" }
   );
-  return fetch(url, { ...options, headers });
+  const res = await fetch(url, { ...options, headers });
+  if (res.status !== 401 || retried || String(url).includes("/api/auth/")) return res;
+  const renewed = await refreshSession();
+  if (renewed) return authFetch(url, options, true);
+  expireSession();
+  return res;
 }
 
 function isLoggedIn() {

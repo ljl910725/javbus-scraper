@@ -33,7 +33,7 @@ class Settings(BaseSettings):
 
     jwt_secret: str = "change-me-in-production"
     jwt_algorithm: str = "HS256"
-    jwt_expire_days: int = 7
+    jwt_expire_days: int = 30
 
     translate_engine: str = "free"
     translate_target_lang: str = "zh-CN"

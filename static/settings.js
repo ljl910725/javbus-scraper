@@ -175,6 +175,7 @@ async function loadSettings() {
 
   const res = await authFetch("/api/settings");
   if (!res.ok) {
+    if (res.status === 401) expireSession();
     setSettingsStatus("加载配置失败，请重新登录", true);
     return;
   }
@@ -373,8 +374,13 @@ settingsForm.addEventListener("submit", async (event) => {
   setSettingsStatus(`配置已保存${payload.cd2_push_folders.length ? `，${payload.cd2_push_folders.length} 个推送目录` : ""}`);
 });
 
-loadSettings();
-initNav({ onLogout: () => loadSettings() });
+async function bootSettings() {
+  await ensureSession();
+  initNav({ onLogout: () => loadSettings() });
+  loadSettings();
+}
+
+bootSettings();
 
 const browseP115FolderBtn = document.getElementById("browseP115FolderBtn");
 const p115FolderModal = document.getElementById("p115FolderModal");

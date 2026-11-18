@@ -35,9 +35,13 @@ async def get_optional_user(request: Request) -> dict | None:
 
     payload = decode_access_token(token)
     if not payload:
-        return None
+        # 浏览器还留着过期令牌时，不能当成匿名用户，否则页面会显示已登录但配置全空
+        raise HTTPException(status_code=401, detail="登录已过期")
 
-    return db.get_user_by_id(int(payload["sub"]))
+    user = db.get_user_by_id(int(payload["sub"]))
+    if not user:
+        raise HTTPException(status_code=401, detail="用户不存在")
+    return user
 
 
 CurrentUser = Annotated[dict, Depends(get_current_user)]

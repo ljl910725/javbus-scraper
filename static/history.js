@@ -84,6 +84,7 @@ async function loadPushHistory() {
   try {
     const res = await authFetch("/api/push/history?limit=50");
     if (!res.ok) {
+      if (res.status === 401) expireSession();
       pushHistoryList.innerHTML = '<p class="push-history-empty">加载推送历史失败</p>';
       return;
     }
@@ -107,5 +108,10 @@ pushHistoryList?.addEventListener("click", (event) => {
   detailBtn.textContent = hidden ? "查看原因" : "收起原因";
 });
 
-initNav({ onLogout: () => loadPushHistory() });
-loadPushHistory();
+async function bootHistory() {
+  await ensureSession();
+  initNav({ onLogout: () => loadPushHistory() });
+  loadPushHistory();
+}
+
+bootHistory();
