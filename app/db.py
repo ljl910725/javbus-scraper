@@ -132,6 +132,7 @@ def init_db() -> None:
                 path TEXT NOT NULL,
                 root TEXT NOT NULL DEFAULT '',
                 seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+                size INTEGER NOT NULL DEFAULT 0,
                 FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
                 UNIQUE (user_id, path)
             );
@@ -140,6 +141,10 @@ def init_db() -> None:
                 ON local_videos(user_id, code);
             """
         )
+        columns = {row[1] for row in conn.execute("PRAGMA table_info(local_videos)")}
+        if "size" not in columns:
+            # 已经建过的库补上文件大小，下次扫描会写成真实字节数
+            conn.execute("ALTER TABLE local_videos ADD COLUMN size INTEGER NOT NULL DEFAULT 0")
         conn.commit()
     close_stale_nosub_replace_jobs()
 
@@ -902,8 +907,8 @@ def list_user_ids() -> list[int]:
         return [int(row["id"]) for row in rows]
 
 
-def upsert_local_video(user_id: int, *, code: str, name: str, path: str, root: str) -> bool:
-    # 同一路径已有记录时只更新番号和看到的时间，返回这次是不是新加的
+def upsert_local_video(user_id: int, *, code: str, name: str, path: str, root: str, size: int) -> bool:
+    # 同一路径已有记录时更新番号、大小和看到的时间，返回这次是不是新加的
     with get_connection() as conn:
         existing = conn.execute(
             "SELECT 1 FROM local_videos WHERE user_id = ? AND path = ?",
@@ -911,15 +916,16 @@ def upsert_local_video(user_id: int, *, code: str, name: str, path: str, root: s
         ).fetchone()
         conn.execute(
             """
-            INSERT INTO local_videos (user_id, code, name, path, root, seen_at)
-            VALUES (?, ?, ?, ?, ?, datetime('now'))
+            INSERT INTO local_videos (user_id, code, name, path, root, size, seen_at)
+            VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
             ON CONFLICT(user_id, path) DO UPDATE SET
                 code = excluded.code,
                 name = excluded.name,
                 root = excluded.root,
+                size = excluded.size,
                 seen_at = datetime('now')
             """,
-            (user_id, code, name, path, root),
+            (user_id, code, name, path, root, size),
         )
         conn.commit()
         return existing is None
@@ -930,7 +936,7 @@ def list_local_videos(user_id: int, root: str | None = None) -> list[dict]:
         if root is None:
             rows = conn.execute(
                 """
-                SELECT code, name, path, root, seen_at
+                SELECT code, name, path, root, size, seen_at
                 FROM local_videos
                 WHERE user_id = ?
                 ORDER BY code, path
@@ -940,7 +946,7 @@ def list_local_videos(user_id: int, root: str | None = None) -> list[dict]:
         else:
             rows = conn.execute(
                 """
-                SELECT code, name, path, root, seen_at
+                SELECT code, name, path, root, size, seen_at
                 FROM local_videos
                 WHERE user_id = ? AND root = ?
                 ORDER BY code, path
@@ -961,7 +967,7 @@ def list_local_videos_by_codes(user_id: int, codes: list[str]) -> list[dict]:
             marks = ",".join("?" for _ in chunk)
             rows = conn.execute(
                 f"""
-                SELECT code, name, path, root, seen_at
+                SELECT code, name, path, root, size, seen_at
                 FROM local_videos
                 WHERE user_id = ? AND code IN ({marks})
                 ORDER BY code, path

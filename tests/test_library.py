@@ -74,6 +74,7 @@ def test_lookup_finds_existing_code_from_number_or_link(library_db):
     by_code = lookup_library(1, ["IPX-177"], [])
     assert by_code[0]["code"] == "IPX-177"
     assert by_code[0]["files"][0]["name"] == "IPX-177.mp4"
+    assert by_code[0]["files"][0]["size"] == 5
 
     link = "magnet:?xt=urn:btih:abc&dn=IPX-177-C.mkv"
     assert code_from_link(link) == "IPX-177"

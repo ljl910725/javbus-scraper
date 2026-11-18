@@ -36,7 +36,12 @@ def _video_rows(root: Path):
             code = extract_jav_code(name)
             if not code:
                 continue
-            yield code, name, str((Path(dirpath) / name).resolve())
+            file_path = (Path(dirpath) / name).resolve()
+            try:
+                size = file_path.stat().st_size
+            except OSError:
+                continue
+            yield code, name, str(file_path), size
 
 
 def duplicate_groups(user_id: int, codes: list[str] | None = None) -> list[dict]:
@@ -48,7 +53,7 @@ def duplicate_groups(user_id: int, codes: list[str] | None = None) -> list[dict]
     grouped: dict[str, list[dict]] = {}
     for row in rows:
         grouped.setdefault(row["code"], []).append(
-            {"name": row["name"], "path": row["path"], "root": row["root"]}
+            {"name": row["name"], "path": row["path"], "root": row["root"], "size": int(row["size"] or 0)}
         )
     groups = []
     for code, files in grouped.items():
@@ -110,14 +115,14 @@ def iter_scan_library(user_id: int, path: str, *, reconcile: bool, stop=None):
         "added": 0,
         "current": root,
     }
-    for code, name, file_path in _video_rows(resolved):
+    for code, name, file_path, size in _video_rows(resolved):
         if stop is not None and stop.is_set():
             yield {"type": "cancelled"}
             return
         scanned += 1
         seen_paths.add(file_path)
         seen_codes.append(code)
-        if db.upsert_local_video(user_id, code=code, name=name, path=file_path, root=root):
+        if db.upsert_local_video(user_id, code=code, name=name, path=file_path, root=root, size=size):
             added += 1
         if scanned % 200 == 0:
             yield {"type": "progress", "scanned": scanned, "added": added, "current": file_path}
@@ -174,7 +179,7 @@ def lookup_library(user_id: int, codes: list[str], links: list[str]) -> list[dic
     grouped: dict[str, list[dict]] = {}
     for row in rows:
         grouped.setdefault(row["code"], []).append(
-            {"name": row["name"], "path": row["path"], "root": row["root"]}
+            {"name": row["name"], "path": row["path"], "root": row["root"], "size": int(row["size"] or 0)}
         )
     result = []
     for code, files in grouped.items():

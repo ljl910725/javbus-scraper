@@ -524,6 +524,7 @@ function renderLibrary(data) {
               (file) => `
             <div class="dup-file">
               <div class="dup-file-name"><strong>${escapeHtml(file.name)}</strong>
+                <span>${escapeHtml(formatBytes(file.size) || "0 B")}</span>
                 <button class="ghost-btn library-delete-btn" type="button" data-path="${escapeAttr(file.path)}">删除</button>
               </div>
               <div class="dup-file-path">${escapeHtml(file.path)}</div>

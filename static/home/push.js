@@ -269,7 +269,9 @@ async function lookupLocalVideos({ codes = [], links = [] } = {}) {
 function libraryExistMessage(groups) {
   return groups
     .map((group) => {
-      const files = (group.files || []).map((file) => `${file.name}\n${file.path}`).join("\n");
+      const files = (group.files || [])
+        .map((file) => `${file.name}（${formatBytes(file.size) || "0 B"}）\n${file.path}`)
+        .join("\n");
       return `${group.code}\n${files}`;
     })
     .join("\n\n");
